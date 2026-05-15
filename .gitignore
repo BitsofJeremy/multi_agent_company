@@ -1,0 +1,8 @@
+# macOS Finder metadata
+.DS_Store
+._*
+
+# Credential files — never commit these
+.env
+*.env
+matrix_credentials.env
