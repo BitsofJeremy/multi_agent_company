@@ -194,8 +194,10 @@ sudo apt-get install -y --no-install-recommends \
   build-essential libffi-dev libssl-dev \
   libjpeg-dev libxslt1-dev libpq-dev \
   libolm-dev \
-  nodejs npm \
   sqlite3 curl ca-certificates git jq rsync
+# NOTE: nodejs/npm are NOT installed from Debian stock here — see the
+# NodeSource block below. Debian 13 ships node 20.x, but hermes-agent's
+# npm package requires node >=22.22.0 (EBADENGINE otherwise).
 
 if [[ "$SKIP_ELEMENT" != true ]]; then
   sudo apt-get install -y element-desktop
@@ -208,6 +210,35 @@ if ! command -v uv &>/dev/null; then
   export PATH="${HOME}/.local/bin:${PATH}"
 fi
 log "uv $(uv --version) ready"
+
+# Install Node.js 22 from NodeSource — hermes-agent@1.0.0 requires
+# node >=22.22.0 (npm engine check fails with EBADENGINE on Debian's
+# stock node 20.x). NodeSource's nodejs bundles npm and replaces the
+# Debian npm package on upgrade. arm64 and amd64 both served.
+node_meets() {
+  # true if installed node >= $1
+  command -v node &>/dev/null || return 1
+  python3 - "$1" "$(node --version | sed 's/^v//')" <<'PY'
+import sys
+req, act = sys.argv[1], sys.argv[2]
+key = lambda v: tuple(int(x) for x in v.split('.')[:3])
+sys.exit(0 if key(act) >= key(req) else 1)
+PY
+}
+
+NODE_MIN="22.22.0"
+if node_meets "${NODE_MIN}"; then
+  log "Node.js $(node --version) >= ${NODE_MIN} — OK"
+else
+  info "Installing Node.js 22 from NodeSource (need >= ${NODE_MIN}, have $(node --version 2>/dev/null || echo none))..."
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+  if node_meets "${NODE_MIN}"; then
+    log "Node.js $(node --version) + npm $(npm --version) ready"
+  else
+    error "Node.js ${NODE_MIN}+ required but not achieved — npm install in Phase 3 will fail"
+  fi
+fi
 
 log "System dependencies installed"
 
@@ -979,8 +1010,9 @@ fi  # end Donbot config
 if [[ "$WITH_PAPERCLIP" == true ]]; then
   header "Phase 4.5: Paperclip (optional dashboard)"
 
-  # Node.js 20+ is required; the managed installer can bootstrap it, but we
-  # check first so the requirement is visible in the log.
+  # Node.js 20+ is required; Phase 1 installs Node 22 by default
+  # (hermes-agent needs >=22.22.0), so this check normally passes already.
+  # The managed installer can bootstrap its own Node if ever run standalone.
   if command -v node >/dev/null 2>&1; then
     NODE_MAJOR="$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
     info "Node.js detected: $(node --version 2>/dev/null)"

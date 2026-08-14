@@ -109,6 +109,7 @@ systemctl --user restart hermes-gateway-<botname>
 ## Known Gotchas (already handled in scripts)
 
 - `hermes.nousresearch.com` returns 429 — scripts clone Hermes directly from GitHub
+- hermes-agent's npm package requires **node >=22.22.0** — Debian 13 stock node 20.x fails with EBADENGINE. launch.sh installs Node 22 from NodeSource (arm64 + amd64) and gates on the minimum version
 - `@admin` must be registered with `-a` (admin flag) for the Synapse admin API to work
 - Paperclip requires `@paperclipai/plugin-sdk` to be built (`pnpm --filter @paperclipai/plugin-sdk build`) before first launch
 - `set -euo pipefail` + password sourcing: always guard with `set +eu` / `set -eu`
