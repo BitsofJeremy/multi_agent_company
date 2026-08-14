@@ -22,7 +22,7 @@ Written from production experience; every gotcha documented.
 3. [Fix Synapse Config Issues](#3-fix-synapse-config-issues)
 4. [Provision Matrix Accounts & Rooms](#4-provision-matrix-accounts--rooms)
 5. [Install Hermes Agent](#5-install-hermes-agent)
-6. [Configure the Default Profile (ArcBot)](#6-configure-the-default-profile-arcbot)
+6. [Configure the Default Profile (Donbot)](#6-configure-the-default-profile-donbot)
 7. [Create Bot Profiles](#7-create-bot-profiles)
 8. [Customize Each Profile](#8-customize-each-profile)
 9. [Install Gateways as System Services](#9-install-gateways-as-system-services)
@@ -74,7 +74,7 @@ Written from production experience; every gotcha documented.
 
 **2 base Matrix accounts:**
 - `@admin:localhost` — human operator (admin)
-- `@arcbot:localhost` — default Hermes profile (ArcBot)
+- `@donbot:localhost` — default Hermes profile (Donbot)
 
 **+ any bots you add** via `hire.sh`
 
@@ -82,7 +82,7 @@ Written from production experience; every gotcha documented.
 
 **Hermes gateways** — one per profile, each running as a user systemd service.
 
-**1 Paperclip instance** — "Hermes Intelligence Corp" with ArcBot as CEO.
+**1 Paperclip instance** — "Hermes Intelligence Corp" with Donbot as CEO.
 
 ---
 
@@ -430,9 +430,9 @@ uv pip install 'matrix-nio[e2e]' --python ~/.hermes/hermes-agent/venv/bin/python
 
 ---
 
-## 6. Configure the Default Profile (ArcBot)
+## 6. Configure the Default Profile (Donbot)
 
-The default profile lives at `~/.hermes/` and is what plain `hermes` commands target. It handles Telegram (if configured) plus Matrix as ArcBot.
+The default profile lives at `~/.hermes/` and is what plain `hermes` commands target. It handles Telegram (if configured) plus Matrix as Donbot.
 
 Add to `~/.hermes/.env`:
 
@@ -441,12 +441,12 @@ Add to `~/.hermes/.env`:
 # MATRIX INTEGRATION
 # =============================================================================
 MATRIX_HOMESERVER=http://127.0.0.1:8008
-MATRIX_USER_ID=@arcbot:localhost
-MATRIX_PASSWORD=<arcbot_password>
-MATRIX_ALLOWED_USERS=@admin:localhost,@arcbot:localhost,@examplebot:localhost
+MATRIX_USER_ID=@donbot:localhost
+MATRIX_PASSWORD=<donbot_password>
+MATRIX_ALLOWED_USERS=@admin:localhost,@donbot:localhost,@examplebot:localhost
 ```
 
-Write `~/.hermes/SOUL.md` with ArcBot's personality and purpose.
+Write `~/.hermes/SOUL.md` with Donbot's personality and purpose.
 
 The default gateway service is already installed by Hermes at:
 `~/.config/systemd/user/hermes-gateway.service`
@@ -463,14 +463,14 @@ systemctl --user restart hermes-gateway
 Each bot gets a fully isolated Hermes profile using `--clone` to inherit API keys and config:
 
 ```bash
-for bot in writerbot engineerbot; do
+for bot in calculon flexo; do
     hermes profile create "$bot" --clone
 done
 ```
 
 This creates:
 - `~/.hermes/profiles/<name>/` — isolated home directory
-- `~/.local/bin/<name>` — command alias (`writerbot chat`, `writerbot gateway start`, etc.)
+- `~/.local/bin/<name>` — command alias (`calculon chat`, `calculon gateway start`, etc.)
 - A systemd service name of `hermes-gateway-<name>.service`
 
 Verify:
@@ -488,7 +488,7 @@ hermes profile list
 import os, re
 
 PROFILES_DIR = os.path.expanduser("~/.hermes/profiles")
-ALLOWED = "@admin:localhost,@arcbot:localhost,@examplebot:localhost"
+ALLOWED = "@admin:localhost,@donbot:localhost,@examplebot:localhost"
 
 bots = {
     "examplebot":  ("@examplebot:localhost",  "<password>"),
@@ -536,7 +536,7 @@ import os
 PROFILES_DIR = os.path.expanduser("~/.hermes/profiles")
 
 # Bots to set to gpt-4.1
-for bot in ["writerbot", "engineerbot"]:
+for bot in ["calculon", "flexo"]:
     path = os.path.join(PROFILES_DIR, bot, "config.yaml")
     with open(path) as f:
         content = f.read()
@@ -556,9 +556,9 @@ Each profile's `~/.hermes/profiles/<name>/SOUL.md` is the bot's system prompt / 
 
 Example:
 ```markdown
-# WriterBot
+# Calculon
 
-You are WriterBot — clear, precise, and deeply thorough in every document you produce.
+You are Calculon — clear, precise, and deeply thorough in every document you produce.
 
 - Expert at technical writing, documentation, and structured communication
 - You approach every task with deliberate craft, never sacrificing clarity for brevity
@@ -573,14 +573,14 @@ Each bot's gateway must be installed as a systemd user service to survive reboot
 
 ```bash
 # Install all bot gateways
-for bot in writerbot engineerbot; do
+for bot in calculon flexo; do
     $bot gateway install
 done
 
 # Enable and start all of them
 systemctl --user enable --now \
-    hermes-gateway-writerbot.service \
-    hermes-gateway-engineerbot.service
+    hermes-gateway-calculon.service \
+    hermes-gateway-flexo.service
 ```
 
 ### Ensure user services survive reboot
@@ -653,7 +653,7 @@ Click **+** next to Rooms → **Join public room** → type the alias e.g. `#gen
 
 ### DMing a bot
 
-Start a new direct message → search for `@arcbot:localhost`. The bot responds to every message in DMs with no @mention required.
+Start a new direct message → search for `@donbot:localhost`. The bot responds to every message in DMs with no @mention required.
 
 ---
 
@@ -664,7 +664,7 @@ After a clean reboot, this is what starts and in what order:
 | Service | Type | Enabled | Notes |
 |---------|------|---------|-------|
 | `matrix-synapse` | system | ✅ | Starts before user services |
-| `hermes-gateway` | user | ✅ | ArcBot — Matrix gateway |
+| `hermes-gateway` | user | ✅ | Donbot — Matrix gateway |
 | `hermes-gateway-<botname>` | user | ✅ | One per provisioned bot |
 | `paperclip` | user | ✅ | Control plane — starts last |
 
@@ -724,7 +724,7 @@ curl -s http://localhost:3100/api/health | python3 -c "import sys,json; d=json.l
 /opt/synapse/venv/                    # Synapse Python venv
 /opt/synapse/venv/bin/register_new_matrix_user
 
-~/.hermes/                            # Default (ArcBot) profile
+~/.hermes/                            # Default (Donbot) profile
 ~/.hermes/.env                        # API keys, Matrix credentials
 ~/.hermes/config.yaml                 # Model, toolsets, settings
 ~/.hermes/SOUL.md                     # Personality / system prompt
@@ -738,7 +738,7 @@ curl -s http://localhost:3100/api/health | python3 -c "import sys,json; d=json.l
 ~/.hermes/profiles/<name>/config.yaml
 ~/.hermes/profiles/<name>/SOUL.md
 
-~/.local/bin/<name>                   # Bot command aliases (e.g. writerbot, engineerbot)
+~/.local/bin/<name>                   # Bot command aliases (e.g. calculon, flexo)
 ~/.config/systemd/user/hermes-gateway.service
 ~/.config/systemd/user/hermes-gateway-<name>.service
 ~/.config/systemd/user/paperclip.service
@@ -782,8 +782,8 @@ For a production server, run through these in order:
 **Hermes Agent**
 - [ ] Install Hermes, run `hermes setup` (configure LLM provider)
 - [ ] `uv pip install 'matrix-nio[e2e]'` into Hermes venv
-- [ ] Add Matrix block to `~/.hermes/.env` (ArcBot credentials)
-- [ ] Write `~/.hermes/SOUL.md` for ArcBot
+- [ ] Add Matrix block to `~/.hermes/.env` (Donbot credentials)
+- [ ] Write `~/.hermes/SOUL.md` for Donbot
 - [ ] Restart default gateway, verify Matrix shows `connected` in `gateway_state.json`
 - [ ] `hermes profile create <name> --clone` for each bot (use `hire.sh` to automate this)
 - [ ] Patch each profile's `.env` (Matrix user/password, remove Telegram token)
@@ -886,7 +886,7 @@ Paperclip does not know about Hermes out of the box. You need a custom **externa
 
 When Paperclip triggers a heartbeat or assigns a task, it calls `adapter.execute(ctx)`. The hermes_local adapter:
 
-1. Reads `profile` from the agent's adapter config (e.g. `"writerbot"`)
+1. Reads `profile` from the agent's adapter config (e.g. `"calculon"`)
 2. Builds a wake prompt from task title, description, company mission, and Paperclip context
 3. Runs: `hermes -p <profile> chat -q "<prompt>" --yolo --max-turns <n>`
 4. Streams stdout/stderr back to Paperclip as live logs
@@ -1005,9 +1005,9 @@ hire_agent() {
     }" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])"
 }
 
-ARCBOT=$(hire_agent "ArcBot"      "Chief Executive Officer"  "default"     "Main Hermes profile, CEO"  6000)
-WRITER=$(hire_agent "WriterBot"   "Technical Writer"         "writerbot"   "Docs and communications"   3000)
-ENGINEER=$(hire_agent "EngineerBot" "Software Engineer"      "engineerbot" "Code and architecture"     5000)
+DONBOT=$(hire_agent "Donbot"      "Chief Executive Officer"  "default"     "Main Hermes profile, CEO"  6000)
+WRITER=$(hire_agent "Calculon"   "Technical Writer"         "calculon"   "Docs and communications"   3000)
+ENGINEER=$(hire_agent "Flexo" "Software Engineer"      "flexo" "Code and architecture"     5000)
 # Add more agents as needed with hire.sh
 ```
 
@@ -1023,7 +1023,7 @@ set_reports_to() {
 
 # CEO direct reports
 set_reports_to "$A1BOT"    "$BARON"
-set_reports_to "$ARCBOT"   "$BARON"
+set_reports_to "$DONBOT"   "$BARON"
 set_reports_to "$LUMINA"   "$BARON"
 set_reports_to "$OMKAI"    "$BARON"
 set_reports_to "$MEATBALL" "$BARON"

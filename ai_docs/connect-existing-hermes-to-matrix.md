@@ -35,7 +35,7 @@ After install, the admin credentials are the same as before:
 
 ## Step 2 — HOST-A: Register HOST-A's Existing Hermes Agent in Synapse
 
-On HOST-A, pick a Matrix user ID for the existing Hermes agent. If the agent's profile is called `arcbot`, use `@arcbot:localhost`. If it's the default profile, use `@default:localhost` or `@hermes:localhost`.
+On HOST-A, pick a Matrix user ID for the existing Hermes agent. If the agent's profile is called `donbot`, use `@donbot:localhost`. If it's the default profile, use `@default:localhost` or `@hermes:localhost`.
 
 Decide the bot name. Below we use `host-a` as an example.
 

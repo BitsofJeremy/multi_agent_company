@@ -31,8 +31,8 @@
 #   --no-gateway                           Skip gateway service install
 #
 # Examples:
-#   bash hire.sh writerbot --title "Technical Writer" --skill story --skill find-skills
-#   bash hire.sh engineerbot --title "CTO" --skill gd-agentic
+#   bash hire.sh calculon --title "Technical Writer" --skill story --skill find-skills
+#   bash hire.sh flexo --title "CTO" --skill gd-agentic
 #   bash hire.sh --title "Creative Director" --skill pixel   # random Futurama name
 #   bash hire.sh researchbot --no-memory --soul "You are ResearchBot, fast and precise."
 # =============================================================================
@@ -182,7 +182,7 @@ fi
 
 # Validate bot name
 if ! [[ "${BOT_NAME}" =~ ^[a-z][a-z0-9_-]*$ ]]; then
-  error "Bot name must be lowercase alphanumeric+underscore (e.g. 'writerbot', 'tinny_tim'). Got: '${BOT_NAME}'"
+  error "Bot name must be lowercase alphanumeric+underscore (e.g. 'calculon', 'tinny_tim'). Got: '${BOT_NAME}'"
 fi
 
 # Default title if not provided

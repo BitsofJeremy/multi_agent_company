@@ -113,11 +113,11 @@ bash hire.sh [botname] [OPTIONS]
 bash hire.sh --title "Technical Writer" --skill story --skill find-skills
 
 # Hire a named CTO with a custom personality and bigger budget
-bash hire.sh engineerbot \
+bash hire.sh flexo \
   --title "Chief Technology Officer" \
   --budget 8000 \
   --skill gd-agentic \
-  --soul "You are EngineerBot — precise, systematic, relentlessly focused on quality."
+  --soul "You are Flexo — precise, systematic, relentlessly focused on quality."
 
 # Hire a pixel art agent (auto-named by hire.sh, e.g. 'calculon')
 bash hire.sh --title "Creative Director" --skill pixel --skill blender-mcp

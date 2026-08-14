@@ -19,8 +19,8 @@
 #   --yes              Skip confirmation prompt
 #
 # Examples:
-#   bash fire.sh writerbot
-#   bash fire.sh engineerbot --keep-matrix --yes
+#   bash fire.sh calculon
+#   bash fire.sh flexo --keep-matrix --yes
 # =============================================================================
 
 set -euo pipefail

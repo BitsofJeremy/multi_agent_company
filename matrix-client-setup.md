@@ -41,8 +41,8 @@ Open: [https://app.element.io](https://app.element.io)
 | User | Matrix ID | Password |
 |------|-----------|----------|
 | You (operator) | `@admin:localhost` | `changeme` |
-| ArcBot (default) | `@arcbot:localhost` | *(see matrix_credentials.env)* |
-| Any provisioned bot | `@<botname>:localhost` | *(see matrix_credentials.env)* |
+| Donbot (CEO, default profile) | `@donbot:localhost` | *(see matrix_credentials.env)* |
+| Any provisioned bot | `@<agent>:localhost` | *(see matrix_credentials.env)* |
 
 ---
 
@@ -62,22 +62,22 @@ To join a room in Element: click **+** next to Rooms → **Join public room** �
 
 ## Talking to Bots
 
-- **DM any bot** — start a direct message with e.g. `@arcbot:localhost`. It will respond to every message, no @mention needed.
+- **DM any bot** — start a direct message with e.g. `@donbot:localhost`. It will respond to every message, no @mention needed.
 - **In a room** — bots respond to all messages in rooms they have joined.
 - **Start a bot gateway** (each bot runs independently):
 
 ```bash
-# Start a specific bot's gateway
-writerbot gateway start
-engineerbot gateway start
+# Start a specific agent's gateway
+flexo gateway start
+bender gateway start
 # etc.
 
 # Or install as a persistent systemd service
-writerbot gateway install
-engineerbot gateway install
+flexo gateway install
+bender gateway install
 ```
 
-The default profile (ArcBot) gateway is already running as a system service.
+The default profile (Donbot, CEO) gateway is already running as a system service.
 
 ---
 
@@ -85,8 +85,8 @@ The default profile (ArcBot) gateway is already running as a system service.
 
 | Profile | Matrix ID | Model | Command |
 |---------|-----------|-------|---------|
-| default (ArcBot) | `@arcbot:localhost` | *(configured via `hermes model`)* | `hermes` |
-| writerbot | `@writerbot:localhost` | gpt-4.1 | `writerbot` |
-| engineerbot | `@engineerbot:localhost` | gpt-4.1 | `engineerbot` |
+| default (Donbot, CEO) | `@donbot:localhost` | *(configured via `hermes model`)* | `hermes` |
+| *(your first hires)* | `@<agent>:localhost` | *(set at hire time)* | `<agent>` |
 
-Profiles are created with `bash hire.sh <botname> --title "..." --model "..."`. Each provisioned bot's command is simply its name.
+Names are drawn from the Futurama robot pool (`names/futurama_robots.txt`) when you don't specify one.
+Profiles are created with `bash hire.sh <name> --title "..." --model "..."`. Each provisioned agent's command is simply its name.
