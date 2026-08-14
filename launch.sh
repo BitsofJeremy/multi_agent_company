@@ -608,7 +608,11 @@ else:
         content += "\nmemory:\n  provider: mnemosyne\n"
     changed = True
 # mnemosyne.data_dir → per-profile
-data_dir = f"~/.hermes/profiles/{pname}/mnemosyne/data"
+# (default profile lives at ~/.hermes itself, NOT under profiles/)
+if pname == "default":
+    data_dir = "~/.hermes/mnemosyne/data"
+else:
+    data_dir = f"~/.hermes/profiles/{pname}/mnemosyne/data"
 if "data_dir:" in content:
     if not re.search(rf"^  data_dir:\s*{re.escape(data_dir)}\s*$", content, re.M):
         content = re.sub(r"^(\s*)data_dir:\s*\S+\s*$", rf"\1data_dir: {data_dir}", content, count=1, flags=re.M)

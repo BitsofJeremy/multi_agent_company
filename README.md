@@ -182,6 +182,9 @@ Five rooms are created automatically. Every agent joins all of them.
 ## Day-to-Day Commands
 
 ```bash
+# One-screen company heartbeat — services, agents, memory, rituals, vault
+bash status.sh
+
 # Check all services
 systemctl is-active matrix-synapse
 systemctl --user is-active hermes-gateway
@@ -217,6 +220,7 @@ hermes profile use flexo && hermes memory status   # a hired agent's store
 | `hire.sh` | Add a new agent to the company |
 | `fire.sh` | Remove an agent and clean up its profile, service, and credentials |
 | `cleanup.sh` | Tear the whole stack back down |
+| `status.sh` | One-screen company heartbeat — services, agents, memory counts, rituals, vault |
 | `setup_vm.sh` | Bootstrap a fresh Debian VM (local lab use — see security note inside) |
 | `memory/` | The agent memory system: `matins.sh`, `vespers.sh`, `scaffold_vault.sh`, `VAULT_RULES.md` |
 | `names/futurama_robots.txt` | 310 unique Futurama robot names — the hire.sh name pool |
