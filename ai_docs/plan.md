@@ -322,7 +322,6 @@ More robust later: mTLS with self-signed certs generated per host.
 - [Matrix Federation](https://spec.matrix.org/latest/server-server-api/)
 - [Mnemosyne memory for Hermes](https://pypi.org/project/mnemosyne-hermes/)
 - [Paperclip adapters](https://github.com/paperclipai/paperclip)
-- [Hermes Agent docs](https://docs.ollama.com/integrations/hermes)
-- [Ollama REST API](https://github.com/ollama/ollama/blob/main/docs/api.md)
+- [Hermes Agent docs](https://hermes-agent.nousresearch.com/docs)
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [WireGuard](https://www.wireguard.com/quickstart/)
