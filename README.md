@@ -213,9 +213,19 @@ mempalace wake-up
 |------|---------|
 | `launch.sh` | One-shot install — run once on a fresh VM |
 | `hire.sh` | Add a new agent to the company |
+| `fire.sh` | Remove an agent and clean up its profile, service, and credentials |
+| `cleanup.sh` | Tear the whole stack back down |
+| `setup_vm.sh` | Bootstrap a fresh Debian VM (local lab use — see security note inside) |
+| `CLAUDE.md` | Guidance for AI coding assistants working in this repo |
 | `ai_docs/plan.md` | Multi-machine federation design notes for future implementers |
+| `ai_docs/connect-existing-hermes-to-matrix.md` | Wire two existing Hermes VMs into one shared Synapse |
 | `hermes-matrix-setup-guide.md` | Deep-dive reference — every gotcha, every config detail |
 | `matrix-client-setup.md` | Quick Element client setup |
+
+> **Security:** everything here is designed for a local VM / LAN. All generated
+> credentials land in `~/Downloads/matrix_credentials.env` (never committed —
+> it's in `.gitignore`), and the default `admin`/`changeme` login is meant to be
+> changed before you rely on any of it.
 
 ---
 
