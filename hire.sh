@@ -8,7 +8,7 @@
 #   3. Configure .env + SOUL.md for the profile
 #   4. Install + start Hermes gateway systemd service
 #   5. Install selected skills into the profile
-#   6. Provision MemPalace memory palace for the bot
+#   6. Provision Mnemosyne memory for the bot (own SQLite fact store)
 #   7. Update MATRIX_ALLOWED_USERS (locked to admin + donbot only)
 #
 # Usage:
@@ -27,7 +27,7 @@
 #                                           blender-mcp — Blender MCP integration skills
 #                                           find-skills — Find-skills discovery skills
 #                                           impeccable  — Frontend design (typography, color, layout, motion)
-#   --no-memory                            Opt out of MemPalace memory
+#   --no-memory                            Opt out of Mnemosyne memory (legacy only)
 #   --no-gateway                           Skip gateway service install
 #
 # Examples:
@@ -52,16 +52,29 @@ HERMES_HOME="${HOME}/.hermes"
 HERMES_AGENT_DIR="${HERMES_HOME}/hermes-agent"
 HERMES_VENV="${HERMES_AGENT_DIR}/venv"
 
-MEMPALACE_HOME="${HOME}/.mempalace"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NAMES_FILE="${SCRIPT_DIR}/names/futurama_robots.txt"
 
 CREDS_FILE="${HOME}/Downloads/matrix_credentials.env"
 
-# Futurama robot name pool (snake_case, simple and recognisable)
-FUTURAMA_NAMES=(
-  bender flexo roberto clamps calculon hedonismbot preacherbot
-  crushinator tinny_tim boxy url roberto daffy sinclair_2k
-  malfunctioning_eddie joey_mousepad kwanzaabot url robot_santa
-)
+# Futurama robot name pool — loaded from names/futurama_robots.txt (310 names,
+# deduped from the Futurama wiki list). Fallback shortlist if the file is moved.
+# (Plain echo here — the coloured log/warn helpers are defined further down.)
+FUTURAMA_NAMES=()
+if [[ -f "${NAMES_FILE}" ]]; then
+  while IFS= read -r _n; do
+    [[ -z "${_n}" || "${_n}" == \#* ]] && continue
+    FUTURAMA_NAMES+=("${_n}")
+  done < "${NAMES_FILE}"
+  echo "  [→] Name pool: ${#FUTURAMA_NAMES[@]} Futurama robots (${NAMES_FILE})"
+else
+  echo "  [!] names file not found (${NAMES_FILE}) — using built-in fallback list"
+  FUTURAMA_NAMES=(
+    bender flexo roberto clamps calculon hedonismbot preacherbot
+    crushinator tinny_tim boxy url sinclair_2k malfunctioning_eddie
+    joey_mousepad kwanzaabot robot_santa donbot
+  )
+fi
 
 # Skill registry: name -> git URL
 declare -A SKILL_REPOS=(
@@ -471,53 +484,71 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 6 — MemPalace per-bot memory palace
+# Step 6 — Mnemosyne memory (per-agent SQLite fact store)
+#
+# The plugin package lives in the shared Hermes venv (installed by launch.sh).
+# Each agent gets: plugin symlink into its profile + provider set to mnemosyne
+# + its own database directory. Nothing is shared between agents.
 # ---------------------------------------------------------------------------
-info "Step 6: Configuring MemPalace memory..."
-
-BOT_PALACE="${MEMPALACE_HOME}/data/${BOT_NAME}"
+info "Step 6: Configuring Mnemosyne memory..."
 
 if [[ "${INSTALL_MEMORY}" == true ]]; then
-  if command -v mempalace &>/dev/null; then
-    mkdir -p "${BOT_PALACE}"
-    if [[ ! -d "${BOT_PALACE}/.palace" ]] && [[ ! -f "${BOT_PALACE}/config.toml" ]]; then
-      mempalace init "${BOT_PALACE}" 2>/dev/null || warn "mempalace init failed — palace directory created, init manually later"
-    else
-      log "Palace already exists for ${BOT_NAME}"
-    fi
-    # Write MemPalace env vars into profile .env
-    python3 << PYEOF
-import re
-env_path = "${ENV_FILE}"
-with open(env_path) as f:
-    content = f.read()
-for key, val in [("MEMPALACE_ENABLED", "true"), ("MEMPALACE_HOME", "${BOT_PALACE}")]:
-    if re.search(rf"^{key}=", content, re.MULTILINE):
-        content = re.sub(rf"^{key}=.*", f"{key}={val}", content, flags=re.MULTILINE)
+  if [[ -x "${HERMES_VENV}/bin/mnemosyne-hermes" ]]; then
+    # Deploy the plugin into this profile (idempotent)
+    "${HERMES_VENV}/bin/mnemosyne-hermes" install --hermes-home "${PROFILE_DIR}" >/dev/null 2>&1 \
+      && log "Mnemosyne plugin linked into profile" \
+      || warn "mnemosyne-hermes install failed for profile — memory falls back to legacy"
+
+    # Wire the provider + per-profile data dir in the profile's config.yaml
+    python3 - "${PROFILE_DIR}/config.yaml" "${BOT_NAME}" <<'PYEOF'
+import sys, re, os
+cfg_path, pname = sys.argv[1], sys.argv[2]
+content = ""
+if os.path.exists(cfg_path):
+    with open(cfg_path) as f:
+        content = f.read()
+
+def upsert_indent_block(content, header, key, val, indent="  "):
+    """Set key: val under the given top-level header, creating either if absent."""
+    if re.search(rf"^{re.escape(header)}\s*$", content, re.M):
+        # header exists — upsert key within its block
+        m = re.search(rf"^{re.escape(header)}\s*$\n", content, re.M)
+        block_start = m.end()
+        # find end of block (next non-indented line)
+        rest = content[block_start:]
+        block_match = re.match(rf"((?:{re.escape(indent)}[^\n]*\n?)*)", rest)
+        block = block_match.group(0) if block_match else ""
+        new_block = block
+        if re.search(rf"^{re.escape(indent)}{re.escape(key)}:", new_block, re.M):
+            new_block = re.sub(rf"^{re.escape(indent)}{re.escape(key)}:.*$",
+                               f"{indent}{key}: {val}", new_block, flags=re.M)
+        else:
+            new_block = new_block.rstrip("\n") + f"\n{indent}{key}: {val}\n"
+            if not new_block.endswith("\n"): new_block += "\n"
+        return content[:block_start] + new_block + rest[len(block):]
     else:
-        content += f"\n{key}={val}\n"
-with open(env_path, "w") as f:
+        # header absent — append the whole section
+        return content.rstrip("\n") + f"\n\n{header}\n{indent}{key}: {val}\n"
+
+content = upsert_indent_block(content, "memory:", "provider", "mnemosyne")
+content = upsert_indent_block(content, "mnemosyne:", "data_dir",
+                              f"~/.hermes/profiles/{pname}/mnemosyne/data")
+with open(cfg_path, "w") as f:
     f.write(content)
+print(f"  config.yaml → provider=mnemosyne, data_dir=~/.hermes/profiles/{pname}/mnemosyne/data")
 PYEOF
-    log "MemPalace palace created: ${BOT_PALACE}"
+    mkdir -p "${PROFILE_DIR}/mnemosyne/data"
+    log "Mnemosyne memory ready for ${BOT_NAME} (own SQLite fact store)"
   else
-    warn "mempalace not installed — run launch.sh or install with 'pipx install mempalace'"
+    warn "mnemosyne-hermes not found in venv — run launch.sh first; ${BOT_NAME} uses legacy memory for now"
   fi
 else
-  # --no-memory: explicitly disable in .env
-  python3 << PYEOF
-import re
-env_path = "${ENV_FILE}"
-with open(env_path) as f:
-    content = f.read()
-if re.search(r"^MEMPALACE_ENABLED=", content, re.MULTILINE):
-    content = re.sub(r"^MEMPALACE_ENABLED=.*", "MEMPALACE_ENABLED=false", content, flags=re.MULTILINE)
-else:
-    content += "\nMEMPALACE_ENABLED=false\n"
-with open(env_path, "w") as f:
-    f.write(content)
-PYEOF
-  log "MemPalace disabled for ${BOT_NAME} (--no-memory)"
+  # --no-memory: leave the profile on Hermes' built-in MEMORY.md/USER.md only.
+  # Remove any provider line so it never picks up an external store.
+  if [[ -f "${PROFILE_DIR}/config.yaml" ]] && grep -q "^  provider:" "${PROFILE_DIR}/config.yaml"; then
+    sed -i "/^  provider:/d" "${PROFILE_DIR}/config.yaml"
+  fi
+  log "Mnemosyne disabled for ${BOT_NAME} (--no-memory) — built-in memory only"
 fi
 
 # ---------------------------------------------------------------------------
@@ -577,7 +608,7 @@ echo    "  Allowed    : ${LOCKED_ALLOWED}"
 [[ ${#BOT_SKILLS[@]} -gt 0 ]] && \
 echo    "  Skills     : ${BOT_SKILLS[*]}"
 [[ "${INSTALL_MEMORY}" == true ]] && \
-echo    "  Memory     : ${BOT_PALACE}"
+echo    "  Memory     : Mnemosyne — ~/.hermes/profiles/${BOT_NAME}/mnemosyne/"
 [[ "${INSTALL_GATEWAY}"  == true ]] && \
 echo    "  Gateway    : systemctl --user status hermes-gateway-${BOT_NAME}"
 echo    "  Credentials: ${CREDS_FILE}"

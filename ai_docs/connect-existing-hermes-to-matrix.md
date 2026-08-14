@@ -21,7 +21,7 @@ On HOST-A, run `launch.sh` but skip everything you already have:
 
 ```bash
 # Run as your desktop user (not root), sudo is called internally
-bash launch.sh --skip-hermes --skip-element --skip-mempalace
+bash launch.sh --skip-hermes --skip-element --skip-memory
 ```
 
 This installs only:

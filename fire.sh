@@ -5,7 +5,7 @@
 # Reverses hire.sh for a named bot:
 #   1. Stop + disable + remove the Hermes gateway systemd service
 #   2. Remove the Hermes profile directory
-#   3. Remove the MemPalace memory palace
+#   3. Remove the agent's Mnemosyne fact store
 #   4. Deactivate the Matrix account (soft-delete via admin API)
 #   5. Remove the bot's password entry from matrix_credentials.env
 #
@@ -14,7 +14,7 @@
 #
 # Options:
 #   --keep-matrix      Skip Matrix account deactivation
-#   --keep-memory      Skip MemPalace palace removal
+#   --keep-memory      Skip Mnemosyne fact store removal
 #   --keep-creds       Skip credential file cleanup
 #   --yes              Skip confirmation prompt
 #
@@ -34,7 +34,6 @@ MATRIX_ADMIN_USER="admin"
 MATRIX_ADMIN_PASS="changeme"
 
 HERMES_HOME="${HOME}/.hermes"
-MEMPALACE_HOME="${HOME}/.mempalace"
 CREDS_FILE="${HOME}/Downloads/matrix_credentials.env"
 
 # ---------------------------------------------------------------------------
@@ -90,7 +89,7 @@ echo -e "${BOLD}${RED}  Firing: @${BOT_NAME}:${MATRIX_DOMAIN}${NC}"
 echo    "  ─────────────────────────────────────────────────"
 echo    "  Profile  : ${HERMES_HOME}/profiles/${BOT_NAME}/"
 echo    "  Service  : hermes-gateway-${BOT_NAME}"
-echo    "  Memory   : ${MEMPALACE_HOME}/data/${BOT_NAME}/"
+echo    "  Memory   : ${HERMES_HOME}/profiles/${BOT_NAME}/mnemosyne/"
 echo    "  Matrix   : $( [[ "${KEEP_MATRIX}"    == true ]] && echo "kept" || echo "deactivated" )"
 echo ""
 
@@ -142,18 +141,18 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 3 — Remove MemPalace palace
+# Step 3 — Remove the agent's Mnemosyne fact store
 # ---------------------------------------------------------------------------
 if [[ "${KEEP_MEMORY}" == true ]]; then
-  warn "Keeping MemPalace palace (--keep-memory)"
+  warn "Keeping Mnemosyne fact store (--keep-memory)"
 else
-  info "Step 3: Removing MemPalace palace for ${BOT_NAME}..."
-  BOT_PALACE="${MEMPALACE_HOME}/data/${BOT_NAME}"
-  if [[ -d "${BOT_PALACE}" ]]; then
-    rm -rf "${BOT_PALACE}"
-    log "Palace removed: ${BOT_PALACE}"
+  info "Step 3: Removing Mnemosyne fact store for ${BOT_NAME}..."
+  BOT_FACTS="${HERMES_HOME}/profiles/${BOT_NAME}/mnemosyne"
+  if [[ -d "${BOT_FACTS}" ]]; then
+    rm -rf "${BOT_FACTS}"
+    log "Fact store removed: ${BOT_FACTS}"
   else
-    warn "Palace not found: ${BOT_PALACE}"
+    warn "Fact store not found: ${BOT_FACTS}"
   fi
 fi
 

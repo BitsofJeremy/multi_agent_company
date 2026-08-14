@@ -5,12 +5,10 @@
 # Reverses launch.sh — removes the entire stack from the system:
 #   1. Stop + disable all Hermes gateway services (bots + Donbot)
 #   2. Remove ~/.hermes (all profiles, sessions, skills, memories)
-#   3. Remove MemPalace palaces + data
+#   3. crontab: strip the matins/vespers ritual entries
 #   4. Stop + remove Matrix Synapse (service, venv, data, config)
 #   5. Remove Element Desktop (apt purge)
-#   6. Remove Ollama (service + binary)
-#   7. Remove credentials file
-#   8. Clean up ~/.local/bin symlinks (hermes, mempalace)
+#   6. Remove credentials file
 #
 # Run as your DESKTOP USER — NOT root. Script calls sudo internally.
 #
@@ -20,13 +18,14 @@
 # Options:
 #   --skip-synapse     Skip Matrix Synapse removal
 #   --skip-hermes      Skip Hermes + profiles removal
-#   --skip-mempalace   Skip MemPalace removal
+#   --keep-vault       Keep the Obsidian vault (~/vault) and ritual crontab
 #   --skip-element     Skip Element Desktop removal
 #   --keep-creds       Keep ~/Downloads/matrix_credentials.env
 #   --yes              Skip confirmation prompt
 #
 # WARNING: This is destructive and irreversible.
-#          All agent data, memory palaces, and Matrix history will be lost.
+#          All agent data, fact stores, vault pages, and Matrix history
+#          will be lost. Back up ~/vault before running if you want the record.
 # =============================================================================
 
 set -euo pipefail
@@ -35,13 +34,13 @@ set -euo pipefail
 # Config (aligned with launch.sh)
 # ---------------------------------------------------------------------------
 HERMES_HOME="${HOME}/.hermes"
-MEMPALACE_HOME="${HOME}/.mempalace"
+VAULT_HOME="${HOME}/vault"
 CREDS_FILE="${HOME}/Downloads/matrix_credentials.env"
 
 # Flags
 SKIP_SYNAPSE=false
 SKIP_HERMES=false
-SKIP_MEMPALACE=false
+KEEP_VAULT=false
 SKIP_ELEMENT=false
 KEEP_CREDS=false
 AUTO_YES=false
@@ -64,7 +63,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-synapse)   SKIP_SYNAPSE=true;   shift ;;
     --skip-hermes)    SKIP_HERMES=true;    shift ;;
-    --skip-mempalace) SKIP_MEMPALACE=true; shift ;;
+    --keep-vault)     KEEP_VAULT=true;     shift ;;
     --skip-element)   SKIP_ELEMENT=true;   shift ;;
     --keep-creds)     KEEP_CREDS=true;     shift ;;
     --yes)            AUTO_YES=true;       shift ;;
@@ -88,8 +87,8 @@ echo ""
 echo -e "${BOLD}  Multi-Agent Company — FULL TEARDOWN${NC}"
 echo    "  ─────────────────────────────────────────────────"
 echo    "  This will permanently remove:"
-[[ "${SKIP_HERMES}"    == false ]] && echo "    • All Hermes profiles and bot data  (~/.hermes)"
-[[ "${SKIP_MEMPALACE}" == false ]] && echo "    • All MemPalace memory palaces       (~/.mempalace)"
+[[ "${SKIP_HERMES}"    == false ]] && echo "    • All Hermes profiles and bot data  (~/.hermes — includes fact stores)"
+[[ "${KEEP_VAULT}"     == false ]] && echo "    • The company vault + rituals        (${VAULT_HOME} + crontab)"
 [[ "${SKIP_SYNAPSE}"   == false ]] && echo "    • Matrix Synapse + all room history  (/var/lib/matrix-synapse)"
 [[ "${SKIP_ELEMENT}"   == false ]] && echo "    • Element Desktop (apt purge)"
 [[ "${KEEP_CREDS}"     == false ]] && echo "    • Credentials file                  (${CREDS_FILE})"
@@ -151,22 +150,32 @@ if [[ "${SKIP_HERMES}" == false ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 3 — Remove MemPalace data
+# Phase 3 — Rituals (crontab) and vault
+#
+# The fact stores live under ~/.hermes/profiles/<agent>/mnemosyne/ and are
+# removed with Phase 2. The vault is a separate directory (~/vault) and the
+# rituals are user crontab entries — handle them explicitly.
 # ---------------------------------------------------------------------------
-if [[ "${SKIP_MEMPALACE}" == false ]]; then
-  info "Phase 3: Removing MemPalace data (${MEMPALACE_HOME})..."
-  if [[ -d "${MEMPALACE_HOME}" ]]; then
-    rm -rf "${MEMPALACE_HOME}"
-    log "~/.mempalace removed"
+if [[ "${KEEP_VAULT}" == false ]]; then
+  # Strip matins/vespers from the user crontab
+  if crontab -l 2>/dev/null | grep -qE 'matins|vespers'; then
+    info "Phase 3: Removing ritual crontab entries..."
+    crontab -l 2>/dev/null | grep -vE 'matins|vespers' | crontab -
+    log "Ritual crontab entries removed"
   else
-    warn "~/.mempalace not found — already clean"
+    warn "No ritual crontab entries found — nothing to strip"
   fi
 
-  # Remove mempalace pipx installation
-  if command -v pipx &>/dev/null && pipx list 2>/dev/null | grep -q mempalace; then
-    pipx uninstall mempalace 2>/dev/null || warn "Could not uninstall mempalace via pipx"
-    log "MemPalace uninstalled via pipx"
+  # Remove the vault itself
+  info "Phase 3: Removing Obsidian vault (${VAULT_HOME})..."
+  if [[ -d "${VAULT_HOME}" ]]; then
+    rm -rf "${VAULT_HOME}"
+    log "~/vault removed (back it up first if you wanted the record — too late now)"
+  else
+    warn "~/vault not found — already clean"
   fi
+else
+  warn "Keeping vault + rituals (--keep-vault)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -254,7 +263,7 @@ echo ""
 echo -e "${BOLD}${GREEN}  Teardown complete.${NC}"
 echo    "  ─────────────────────────────────────────────────"
 [[ "${SKIP_HERMES}"    == false ]] && echo "  Hermes    : removed"
-[[ "${SKIP_MEMPALACE}" == false ]] && echo "  MemPalace : removed"
+[[ "${KEEP_VAULT}"     == false ]] && echo "  Vault     : removed (fact stores went with ~/.hermes)"
 [[ "${SKIP_SYNAPSE}"   == false ]] && echo "  Synapse   : removed"
 [[ "${SKIP_ELEMENT}"   == false ]] && echo "  Element   : removed"
 [[ "${KEEP_CREDS}"     == false ]] && echo "  Creds     : removed"

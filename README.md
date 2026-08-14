@@ -2,9 +2,9 @@
 
 > Spin up a fully autonomous AI company on a Debian VM in one command. Real agents. Real coordination. Zero drama.
 
-**Stack:** Matrix Synapse · Ollama · Hermes Agent · MemPalace · Element Desktop
+**Stack:** Matrix Synapse · Hermes Agent · Mnemosyne memory · Obsidian vault · Element Desktop · Paperclip (optional)
 
-Your agents run as independent systemd services, each with its own Futurama robot persona, LLM model, skill set, and memory palace. **Donbot** (your CEO — a smooth-talking Robot Mafia don) is the only agent who talks to you via Matrix. All peer-agent task delegation flows through Matrix coordination rooms. Add or remove agents anytime.
+Your agents run as independent systemd services, each with its own Futurama robot persona, LLM model, skill set, and private memory. **Donbot** (your CEO — a smooth-talking Robot Mafia don) is the only agent who talks to you via Matrix. All peer-agent task delegation flows through Matrix coordination rooms. Add or remove agents anytime.
 
 ```bash
 git clone https://github.com/BitsofJeremy/multi_agent_company.git
@@ -20,7 +20,9 @@ bash launch.sh
 |-----------|---------|
 | **Matrix Synapse** | Private homeserver at `http://0.0.0.0:8008` — LAN-reachable; use `http://<VM-IP>:8008` from other devices |
 | **Hermes Agent** | Donbot (CEO) as your default profile, connected to Matrix — inference provider set via `hermes model` |
-| **MemPalace** | Local-first AI memory — every agent gets its own palace under `~/.mempalace/data/` |
+| **Agent Memory** | Every agent gets a private Mnemosyne fact store (SQLite, hybrid semantic + full-text recall) under `~/.hermes/profiles/<name>/mnemosyne/` |
+| **Company Vault** | Obsidian vault at `~/vault` — the CEO keeps a daily diary, issues log, and project notes; `matins`/`vespers` cron rituals open and close each day |
+| **Paperclip** *(optional)* | Agent-orchestration dashboard (org chart, tasks, budgets) at `http://localhost:3100` — opt in with `--with-paperclip` |
 | **Element Desktop** | Your window into the Matrix — chat with Donbot directly |
 | **Hermes Intelligence Corp** | Pre-configured company with Donbot as founding CEO |
 
@@ -51,7 +53,7 @@ hermes chat
 element-desktop
 ```
 
-Matrix Synapse and Ollama bind to `0.0.0.0` so they're reachable from your LAN.
+Matrix Synapse binds to `0.0.0.0` so it's reachable from your LAN.
 Element can connect to `http://<VM-IP>:8008` from any machine on your network.
 
 > **VPS / public hosting?** Add Nginx in front to terminate TLS — see the TODO comments
@@ -66,8 +68,9 @@ Credentials are saved to: `~/Downloads/matrix_credentials.env`
 ```bash
 bash launch.sh --skip-synapse     # Synapse already installed
 bash launch.sh --skip-hermes      # Hermes already installed
-bash launch.sh --skip-mempalace   # MemPalace already installed
+bash launch.sh --skip-memory      # Mnemosyne + vault already installed
 bash launch.sh --skip-element     # Element already installed
+bash launch.sh --with-paperclip   # also install the Paperclip dashboard (optional)
 ```
 
 ---
@@ -89,7 +92,7 @@ bash hire.sh [botname] [OPTIONS]
 | `--model "minimax-m2.7:cloud"` | LLM model for the profile |
 | `--soul "You are..."` | Custom SOUL.md personality |
 | `--skill <name>` | Install a skill (repeatable) |
-| `--no-memory` | Opt out of MemPalace memory palace |
+| `--no-memory` | Opt out of Mnemosyne — built-in MEMORY.md only |
 | `--no-gateway` | Skip systemd gateway service |
 
 **Available skills (`--skill`):**
@@ -138,7 +141,7 @@ bash hire.sh --title "Research Analyst" \
 6. Writes `SOUL.md` personality file
 7. Sets the model in `config.yaml` (if `--model` given)
 8. Clones and installs selected skills into `~/.hermes/profiles/<name>/skills/`
-9. Initialises MemPalace palace at `~/.mempalace/data/<name>/` (unless `--no-memory`)
+9. Provisions a private Mnemosyne fact store at `~/.hermes/profiles/<name>/mnemosyne/` (unless `--no-memory`)
 10. Installs + starts `hermes-gateway-<name>.service` (systemd user service)
 
 ---
@@ -199,10 +202,9 @@ hermes profile list
 # Chat with Donbot (CEO — the only agent you talk to directly)
 hermes chat
 
-# MemPalace — mine context and search memories
-mempalace mine ~/projects/myapp
-mempalace search "why did we change the architecture"
-mempalace wake-up
+# Memory — what each agent remembers lives in its own fact store
+hermes memory status                     # provider + health (Donbot profile)
+hermes profile use flexo && hermes memory status   # a hired agent's store
 ```
 
 ---
@@ -216,6 +218,8 @@ mempalace wake-up
 | `fire.sh` | Remove an agent and clean up its profile, service, and credentials |
 | `cleanup.sh` | Tear the whole stack back down |
 | `setup_vm.sh` | Bootstrap a fresh Debian VM (local lab use — see security note inside) |
+| `memory/` | The agent memory system: `matins.sh`, `vespers.sh`, `scaffold_vault.sh`, `VAULT_RULES.md` |
+| `names/futurama_robots.txt` | 310 unique Futurama robot names — the hire.sh name pool |
 | `CLAUDE.md` | Guidance for AI coding assistants working in this repo |
 | `ai_docs/plan.md` | Multi-machine federation design notes for future implementers |
 | `ai_docs/connect-existing-hermes-to-matrix.md` | Wire two existing Hermes VMs into one shared Synapse |
@@ -246,22 +250,29 @@ Everything below is already handled by the scripts — documented here so you kn
 
 ```
 ~/.hermes/
-├── .env                    # Donbot config — Matrix, Ollama, MemPalace credentials
-├── config.yaml             # Model (minimax-m2.7:cloud), terminal backend, etc.
+├── .env                    # Donbot config — Matrix, memory, vault settings
+├── config.yaml             # Memory provider (mnemosyne), terminal backend, etc.
 ├── SOUL.md                 # Donbot's personality (Futurama Robot Mafia don)
-├── hermes-agent/           # Cloned Hermes source + Python venv
+├── VAULT_RULES.md          # How the CEO keeps the vault (read on demand)
+├── rituals/
+│   ├── matins.sh           # Morning ritual — opens the day's page
+│   └── vespers.sh          # Evening ritual — closes the day's page
+├── hermes-agent/           # Cloned Hermes source + Python venv (shared, with mnemosyne-hermes)
 └── profiles/
     └── <botname>/          # Each hired agent gets its own isolated profile
         ├── .env            # Matrix creds (MATRIX_ALLOWED_USERS=admin,donbot only)
         ├── SOUL.md
-        ├── config.yaml
+        ├── config.yaml     # provider: mnemosyne, per-agent data_dir
+        ├── mnemosyne/      # This agent's private SQLite fact store
+        │   └── data/
         └── skills/         # Installed SKILL.md files
             └── *.md
 
-~/.mempalace/
-└── data/
-    ├── donbot/             # CEO memory palace
-    └── <botname>/          # Per-agent memory palace
+~/vault/                    # The company vault (Obsidian)
+├── Daily/                  # One markdown page per day — the long record
+├── Projects/               # What's being built
+├── System/                 # Issues log + assistant handbook
+└── Inbox/                  # Unsorted capture
 
 /etc/matrix-synapse/        # Synapse config (homeserver.yaml, signing.key)
 /var/lib/matrix-synapse/    # Synapse SQLite DB, media store

@@ -39,7 +39,7 @@ On a single Debian VM, `launch.sh` installs:
 - **Matrix Synapse** at `http://127.0.0.1:8008` — the agents' message bus
 - **Hermes Agent** — `donbot` (CEO) as default profile, other agents via `hire.sh`
 - **Paperclip** at `http://localhost:3100` — the company control plane (org chart, tasks)
-- **MemPalace** — per-agent local memory palaces
+- **Mnemosyne** — per-agent local fact stores (SQLite under each Hermes profile)
 
 All agents run as systemd user services on the same host. Donbot is the only agent with a
 Matrix gateway open to the human operator. Peer agents receive work via Paperclip's
@@ -55,7 +55,7 @@ When agents live on different machines, three things break:
 |---|---|
 | Matrix rooms | `127.0.0.1:8008` is not reachable from other hosts |
 | Paperclip `hermes_local` adapter | Calls local Hermes binary — won't reach a remote agent |
-| MemPalace | Each host has its own local palace; they don't share memories |
+| Mnemosyne | Each host has its own local fact stores; they don't share memories |
 
 **WireGuard solves the networking layer.** Every host already has a stable WireGuard IPv4
 address. No Tailscale or port-forwarding needed. Services can bind to the WireGuard
@@ -189,30 +189,30 @@ different hosts appear in the same Matrix rooms, and Donbot on the Mac can deleg
 
 - Matrix federation for human-facing conversation (Donbot visible on every host)
 - Paperclip HTTP adapter for structured task dispatch to remote agents
-- MemPalace sync for shared memory
+- Mnemosyne sync for shared memory
 
 Implementation order: get Approach B working → add Matrix federation per host → wire up
-MemPalace sync. Don't attempt all three at once.
+Mnemosyne sync. Don't attempt all three at once.
 
 ---
 
-## MemPalace Federation
+## Mnemosyne Federation
 
-MemPalace is local-first. Options for cross-host memory sharing:
+Mnemosyne is local-first (per-agent SQLite). Options for cross-host memory sharing:
 
 | Option | Effort | Notes |
 |---|---|---|
-| **rsync over WireGuard** | Low | Sync palace dirs on a schedule; eventual consistency; start here |
-| **MemPalace MCP server on VPS** | Medium | Expose MCP server at `10.x.x.2:<port>`; all agents query it |
-| **Shared ChromaDB backend on VPS** | Medium | Point all MemPalace instances at a single ChromaDB |
-| **Git-backed palace** | Medium | Commit palace to a private git repo; agents pull/push |
+| **rsync over WireGuard** | Low | Sync fact-store dirs on a schedule; eventual consistency; start here |
+| **Mnemosyne MCP server on VPS** | Medium | Expose MCP server at `10.x.x.2:<port>`; all agents query it |
+| **Shared SQLite backend on VPS** | Medium | Point all agents' Mnemosyne at one networked store |
+| **Git-backed fact store** | Medium | Commit fact stores to a private git repo; agents pull/push |
 
 **Recommended start:** rsync from VPS to Mac every 15 minutes via a systemd timer over
 the WireGuard interface.
 
 ```bash
 # On Mac — pull VPS memories
-rsync -az --delete 10.x.x.2:~/.mempalace/data/ ~/.mempalace/data/vps/
+rsync -az --delete 10.x.x.2:~/.hermes/profiles/*/mnemosyne/ ~/backups/vps-mnemosyne/
 ```
 
 ---
@@ -293,7 +293,7 @@ More robust later: mTLS with self-signed certs generated per host.
    `launch.sh` where `hermes_local` is registered.
 3. **Cronbot result forwarding:** How should cronbot alert Donbot when something is critical?
    Options: Matrix DM via `matrix-commander` CLI, POST to Paperclip `/tasks`, or write to
-   a shared MemPalace room that Donbot polls.
+   a shared `#memory` Matrix room that Donbot polls.
 4. **Deploybot working directory:** The agent needs write access to the web root and
    permission to restart nginx/caddy. Use a dedicated deploy user + sudoers rule, or
    run deploybot under the web server user.
@@ -312,7 +312,7 @@ More robust later: mTLS with self-signed certs generated per host.
 6. Register deploybot + cronbot in central Paperclip on Mac
 7. Set up `cronbot-check.timer` on VPS
 8. Test end-to-end: tell Donbot to deploy, watch Paperclip route the task to VPS
-9. Add rsync-based MemPalace sync
+9. Add rsync-based Mnemosyne fact-store sync
 10. (Later) Matrix federation if desired
 
 ---
@@ -320,7 +320,7 @@ More robust later: mTLS with self-signed certs generated per host.
 ## Reference Links
 
 - [Matrix Federation](https://spec.matrix.org/latest/server-server-api/)
-- [MemPalace MCP tools](https://mempalaceofficial.com/reference/mcp-tools)
+- [Mnemosyne memory for Hermes](https://pypi.org/project/mnemosyne-hermes/)
 - [Paperclip adapters](https://github.com/paperclipai/paperclip)
 - [Hermes Agent docs](https://docs.ollama.com/integrations/hermes)
 - [Ollama REST API](https://github.com/ollama/ollama/blob/main/docs/api.md)

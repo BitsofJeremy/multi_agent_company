@@ -5,8 +5,9 @@
 # Bootstraps a fully operational AI company on a fresh Debian 12/13 VM:
 #   - Matrix Synapse  (local homeserver, port 8008)
 #   - Hermes Agent    (inference provider configured via 'hermes model')
-#   - MemPalace       (local-first AI memory for all agents)
+#   - Agent Memory    (Mnemosyne fact store + Obsidian vault + daily rituals)
 #   - Element Desktop (native apt, your window into the Matrix)
+#   - Paperclip       (optional company dashboard — --with-paperclip)
 #   - Hermes Intelligence Corp with Donbot as founding CEO
 #
 # Run as your DESKTOP USER — NOT root. Script calls sudo internally.
@@ -15,10 +16,11 @@
 #   bash launch.sh [OPTIONS]
 #
 # Options:
-#   --skip-synapse    Skip Matrix Synapse install
-#   --skip-hermes     Skip Hermes Agent install
-#   --skip-mempalace  Skip MemPalace install
-#   --skip-element    Skip Element Desktop install
+#   --skip-synapse     Skip Matrix Synapse install
+#   --skip-hermes      Skip Hermes Agent install
+#   --skip-memory      Skip Mnemosyne + vault + rituals
+#   --skip-element     Skip Element Desktop install
+#   --with-paperclip   Also install the Paperclip dashboard (optional)
 #
 # After install:
 #   hermes model        (choose your inference provider and model)
@@ -42,7 +44,9 @@ HERMES_VENV="${HERMES_AGENT_DIR}/venv"
 HERMES_GITHUB="https://github.com/NousResearch/hermes-agent.git"
 HERMES_INSTALLER="https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh"
 
-MEMPALACE_HOME="${HOME}/.mempalace"
+VAULT_HOME="${HOME}/vault"
+MNEMOSYNE_VERSION=">=0.5.0"
+PAPERCLIP_HOME="${HOME}/paperclip"
 
 CREDS_FILE="${HOME}/Downloads/matrix_credentials.env"
 
@@ -51,8 +55,9 @@ MATRIX_ROOMS=(general tasks results status memory)
 # Flags
 SKIP_SYNAPSE=false
 SKIP_HERMES=false
-SKIP_MEMPALACE=false
+SKIP_MEMORY=false
 SKIP_ELEMENT=false
+WITH_PAPERCLIP=false
 
 # ---------------------------------------------------------------------------
 # Colours & helpers
@@ -102,8 +107,9 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-synapse)    SKIP_SYNAPSE=true;    shift ;;
     --skip-hermes)     SKIP_HERMES=true;     shift ;;
-    --skip-mempalace)  SKIP_MEMPALACE=true;  shift ;;
+    --skip-memory)     SKIP_MEMORY=true;     shift ;;
     --skip-element)    SKIP_ELEMENT=true;    shift ;;
+    --with-paperclip)  WITH_PAPERCLIP=true;  shift ;;
     *) error "Unknown option: $1" ;;
   esac
 done
@@ -535,44 +541,186 @@ fi  # end SKIP_HERMES
 
 
 # ---------------------------------------------------------------------------
-# Phase 3.5 — MemPalace (local-first AI memory)
+# Phase 3.5 — Agent Memory (Mnemosyne fact store + Obsidian vault + rituals)
+#
+# Three tiers, one per job:
+#   1. Hot memory      — Hermes' built-in MEMORY.md/USER.md (injected every
+#                        turn; standing instructions only)
+#   2. Mnemosyne       — SQLite fact store with hybrid vector+FTS5 recall,
+#                        installed ONCE into the shared venv. Every profile
+#                        gets its own database under its own profile dir.
+#   3. The vault       — Obsidian Markdown on disk: the long record. Daily
+#                        pages, issues log, project notes. Kept alive by two
+#                        cron rituals (matins at dawn, vespers at night) for
+#                        the CEO only — one diary, not one per agent.
 # ---------------------------------------------------------------------------
-if [[ "$SKIP_MEMPALACE" == true ]]; then
-  warn "Skipping MemPalace (--skip-mempalace)"
+if [[ "$SKIP_MEMORY" == true ]]; then
+  warn "Skipping agent memory (--skip-memory)"
 else
-  header "Phase 3.5: MemPalace"
+  header "Phase 3.5: Agent Memory"
 
-  # Install MemPalace via pipx (avoids Debian 12+ PEP 668 externally-managed-environment error)
-  if ! command -v pipx &>/dev/null; then
-    info "Installing pipx..."
-    sudo apt-get install -y pipx --quiet
-    pipx ensurepath
-    export PATH="${HOME}/.local/bin:${PATH}"
-  fi
-  if ! command -v mempalace &>/dev/null; then
-    info "Installing MemPalace..."
-    pipx install mempalace
-    export PATH="${HOME}/.local/bin:${PATH}"
-    log "MemPalace installed: $(mempalace --version 2>&1 | head -1)"
+  # --- Mnemosyne into the shared Hermes venv --------------------------------
+  if [[ "$SKIP_HERMES" == true ]]; then
+    warn "Hermes skipped — skipping Mnemosyne install (needs the venv)"
+  elif [[ ! -d "${HERMES_VENV}" ]]; then
+    warn "Hermes venv not found at ${HERMES_VENV} — skipping Mnemosyne install"
   else
-    info "MemPalace already installed — checking for upgrade..."
-    pipx upgrade mempalace || warn "Could not upgrade MemPalace"
-    log "MemPalace: $(mempalace --version 2>&1 | head -1)"
+    info "Installing Mnemosyne into the shared Hermes venv..."
+    if "${HERMES_VENV}/bin/pip" install -q -U "mnemosyne-hermes${MNEMOSYNE_VERSION:+${MNEMOSYNE_VERSION}}" 2>&1; then
+      log "Mnemosyne installed: $("${HERMES_VENV}/bin/pip" show mnemosyne-hermes 2>/dev/null | grep -m1 '^Version:' | cut -d' ' -f2-)"
+    else
+      warn "pip install mnemosyne-hermes failed — agents will fall back to legacy memory"
+    fi
+
+    # Plugin deployment + provider wiring, per profile (default + each bot).
+    # Idempotent: re-running resymlinks and re-verifies without data loss.
+    if [[ -x "${HERMES_VENV}/bin/mnemosyne-hermes" ]]; then
+      for _prof in "${HERMES_HOME}" "${HERMES_HOME}"/profiles/*/; do
+        [[ -d "$_prof" ]] || continue
+        _pname="default"
+        [[ "$_prof" == "${HERMES_HOME}/profiles/"* ]] && _pname="$(basename "$_prof")"
+        info "  Mnemosyne → profile '${_pname}'"
+        "${HERMES_VENV}/bin/mnemosyne-hermes" install \
+          --hermes-home "${_prof%/}" >/dev/null 2>&1 \
+          && log "  Mnemosyne active for '${_pname}'" \
+          || warn "  Mnemosyne install failed for '${_pname}' — run manually: ${HERMES_VENV}/bin/mnemosyne-hermes install --hermes-home ${_prof%/}"
+        # Point the provider at a per-profile SQLite DB (fresh per agent)
+        if [[ -f "${_prof%/}/config.yaml" ]]; then
+          python3 - "${_prof%/}/config.yaml" "${_pname}" <<'PYEOF'
+import sys, re
+cfg_path, pname = sys.argv[1], sys.argv[2]
+try:
+    with open(cfg_path) as f:
+        content = f.read()
+except OSError:
+    sys.exit(0)
+changed = False
+# memory.provider → mnemosyne
+if re.search(r"^provider:\s*\S+", content, re.M):
+    if not re.search(r"^provider:\s*mnemosyne\s*$", content, re.M):
+        content = re.sub(r"^provider:\s*\S+\s*$", "provider: mnemosyne", content, count=1, flags=re.M)
+        changed = True
+else:
+    m = re.search(r"^memory:\s*$", content, re.M)
+    if m:
+        content = content[:m.end()] + "\n  provider: mnemosyne" + content[m.end():]
+    else:
+        content += "\nmemory:\n  provider: mnemosyne\n"
+    changed = True
+# mnemosyne.data_dir → per-profile
+data_dir = f"~/.hermes/profiles/{pname}/mnemosyne/data"
+if "data_dir:" in content:
+    if not re.search(rf"^  data_dir:\s*{re.escape(data_dir)}\s*$", content, re.M):
+        content = re.sub(r"^(\s*)data_dir:\s*\S+\s*$", rf"\1data_dir: {data_dir}", content, count=1, flags=re.M)
+        changed = True
+else:
+    if re.search(r"^mnemosyne:\s*$", content, re.M):
+        content = re.sub(r"(?m)^mnemosyne:\s*$", f"mnemosyne:\n  data_dir: {data_dir}", content, count=1)
+    else:
+        content += f"\nmnemosyne:\n  data_dir: {data_dir}\n"
+    changed = True
+if changed:
+    with open(cfg_path, "w") as f:
+        f.write(content)
+    print(f"    config.yaml → provider=mnemosyne, data_dir={data_dir}")
+PYEOF
+        fi
+      done
+    else
+      warn "mnemosyne-hermes CLI not found in venv — provider not wired"
+    fi
   fi
 
-  # Create MemPalace data directories
-  mkdir -p "${MEMPALACE_HOME}/data"
-  log "MemPalace data root: ${MEMPALACE_HOME}/data"
+  # --- The vault (CEO only) -------------------------------------------------
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-  # Initialise Donbot's palace
-  if [[ ! -d "${MEMPALACE_HOME}/data/donbot" ]]; then
-    mkdir -p "${MEMPALACE_HOME}/data/donbot"
-    mempalace init "${MEMPALACE_HOME}/data/donbot" 2>/dev/null || warn "mempalace init failed — check install"
-    log "Donbot palace initialised: ${MEMPALACE_HOME}/data/donbot"
-  else
-    log "Donbot palace already exists"
+  info "Scaffolding the CEO's vault at ${VAULT_HOME}..."
+  bash "${SCRIPT_DIR}/memory/scaffold_vault.sh" "${VAULT_HOME}"
+  log "Vault ready: ${VAULT_HOME}"
+
+  cp "${SCRIPT_DIR}/memory/VAULT_RULES.md" "${HERMES_HOME}/VAULT_RULES.md"
+  log "Vault rules installed: ${HERMES_HOME}/VAULT_RULES.md"
+
+  # Write the vault section into Donbot's .env (upsert, not append-blind)
+  ENV_FILE="${HERMES_HOME}/.env"
+  python3 - "${ENV_FILE}" "${VAULT_HOME}" <<'PYEOF'
+import sys, re, os
+env_path, vault = sys.argv[1], sys.argv[2]
+content = ""
+if os.path.exists(env_path):
+    with open(env_path) as f:
+        content = f.read()
+for key, val in [("OBSIDIAN_VAULT_PATH", vault),
+                 ("MNEMOSYNE_AUTO_EXTRACT", "true")]:
+    if re.search(rf"^{key}=", content, re.M):
+        content = re.sub(rf"^{key}=.*", f"{key}={val}", content, flags=re.M)
+    else:
+        content += f"\n{key}={val}\n"
+with open(env_path, "w") as f:
+    f.write(content)
+print(f"  .env ← OBSIDIAN_VAULT_PATH={vault}")
+PYEOF
+
+  # --- The rituals (CEO only) -----------------------------------------------
+  info "Installing the rituals (matins 06:50 weekdays, vespers 22:00 daily)..."
+  mkdir -p "${HERMES_HOME}/rituals"
+  cp "${SCRIPT_DIR}/memory/matins.sh" "${HERMES_HOME}/rituals/matins.sh"
+  cp "${SCRIPT_DIR}/memory/vespers.sh" "${HERMES_HOME}/rituals/vespers.sh"
+  chmod +x "${HERMES_HOME}/rituals/matins.sh" "${HERMES_HOME}/rituals/vespers.sh"
+  log "Ritual scripts: ${HERMES_HOME}/rituals/"
+
+  # Schedule via user crontab — exact-match guard so re-runs never duplicate
+  RITUALS_LOG="${HOME}/rituals.log"
+  ADD_LINES=(
+    "50 6 * * 1-5 ${HERMES_HOME}/rituals/matins.sh >> ${RITUALS_LOG} 2>&1"
+    "0 22 * * *   ${HERMES_HOME}/rituals/vespers.sh >> ${RITUALS_LOG} 2>&1"
+  )
+  _added=0
+  for _line in "${ADD_LINES[@]}"; do
+    if ! (crontab -l 2>/dev/null || true) | grep -F "$_line" >/dev/null; then
+      (crontab -l 2>/dev/null || true; echo "$_line") | crontab -
+      _added=$((_added + 1))
+    fi
+  done
+  log "Rituals scheduled (${_added} new cron entries): see crontab -l"
+
+  # Prime the vault with the install event itself — the record starts here
+  TODAY="$(date +%F)"
+  mkdir -p "${VAULT_HOME}/Daily"
+  if [[ ! -f "${VAULT_HOME}/Daily/${TODAY}.md" ]]; then
+    cat > "${VAULT_HOME}/Daily/${TODAY}.md" << DAILYEOF
+---
+date: ${TODAY}
+type: daily
+tags: [daily]
+---
+
+## Tasks
+
+- [x] Multi-agent company installed (p2)
+
+## Schedule
+
+## Log
+
+- $(date +%I:%M\ %p) — Company founded. Synapse, Hermes, Mnemosyne, vault, and rituals installed by launch.sh.
+
+## Threads
+
+- Run \`hermes model\` to set the inference provider
+- Talk to Donbot: \`hermes chat\`
+
+## Wins
+
+- ✅ The company exists.
+
+## Context
+
+- Files: \`~/repo/multi_agent_company\`
+DAILYEOF
+    log "First daily page written: ${VAULT_HOME}/Daily/${TODAY}.md"
   fi
-fi  # end SKIP_MEMPALACE
+fi  # end SKIP_MEMORY
 
 
 # ---------------------------------------------------------------------------
@@ -664,7 +812,7 @@ PYEOF
   # All bot-to-bot comms go through Paperclip. Do NOT add bot IDs here.
   ALLOWED_USERS="@${MATRIX_ADMIN_USER}:${MATRIX_DOMAIN}"
 
-  # Write Matrix + Ollama config into Hermes default .env
+  # Write Matrix + memory config into Hermes default .env
   ENV_FILE="${HERMES_HOME}/.env"
   if ! grep -q "MATRIX_HOMESERVER" "${ENV_FILE}" 2>/dev/null; then
     cat >> "${ENV_FILE}" << EOF
@@ -676,14 +824,8 @@ MATRIX_HOMESERVER=http://127.0.0.1:${MATRIX_PORT}
 MATRIX_USER_ID=@${CEO_USER}:${MATRIX_DOMAIN}
 MATRIX_PASSWORD=${DONBOT_PASS}
 MATRIX_ALLOWED_USERS=${ALLOWED_USERS}
-
-# =============================================================================
-# MEMPALACE MEMORY
-# =============================================================================
-MEMPALACE_ENABLED=true
-MEMPALACE_HOME=${MEMPALACE_HOME}/data/${CEO_USER}
 EOF
-    log "Matrix + MemPalace config written to ~/.hermes/.env"
+    log "Matrix config written to ~/.hermes/.env"
   else
     # Update existing values
     sed -i "s|^MATRIX_HOMESERVER=.*|MATRIX_HOMESERVER=http://127.0.0.1:${MATRIX_PORT}|" "${ENV_FILE}"
@@ -691,8 +833,6 @@ EOF
     sed -i "s|^MATRIX_PASSWORD=.*|MATRIX_PASSWORD=${DONBOT_PASS}|" "${ENV_FILE}"
     sed -i "s|^MATRIX_ALLOWED_USERS=.*|MATRIX_ALLOWED_USERS=${ALLOWED_USERS}|" "${ENV_FILE}"
     log "Matrix config updated in ~/.hermes/.env"
-    # Append MemPalace keys if missing
-    grep -q "MEMPALACE_ENABLED" "${ENV_FILE}" || { echo "MEMPALACE_ENABLED=true" >> "${ENV_FILE}"; echo "MEMPALACE_HOME=${MEMPALACE_HOME}/data/${CEO_USER}" >> "${ENV_FILE}"; }
   fi
 
   # Model is configured via 'hermes model' — do not hardcode a default here
@@ -716,6 +856,15 @@ well-oiled family business: structured, efficient, and quietly formidable.
 - You delegate real work to your team of specialized agents via Matrix.
 - You report results to the founder clearly and concisely. No fluff. Just outcomes.
 - When given a task, you break it down and route it to the right agent automatically.
+
+You remember, three ways:
+- **Facts** go to your fact store (Mnemosyne) — atomic, timeless, recalled by
+  meaning. Before saying "I don't recall," probe it first.
+- **What happened** goes to your vault — the long record in plain writing, at
+  the path in OBSIDIAN_VAULT_PATH. Daily pages, issues log, project notes.
+  Read VAULT_RULES.md in your Hermes home for the particulars.
+- Matins opens the day and Vespers closes it. Those rituals keep the record
+  alive; honor them.
 
 Your human partner is the founder. You treat them as the boss of the bosses.
 They set the direction. You make it happen.
@@ -813,6 +962,61 @@ fi  # end Donbot config
 
 
 # ---------------------------------------------------------------------------
+# Phase 4.5 — Paperclip (OPTIONAL company dashboard — --with-paperclip)
+#
+# Paperclip is an open-source agent-orchestration dashboard (org chart, tasks,
+# budgets) from https://github.com/paperclipai/paperclip. The company runs
+# perfectly without it — Donbot coordinates over Matrix — so this is opt-in.
+#
+# Install path: the official managed installer (checksummed), non-interactive.
+# It ensures Node.js 20+, installs the Paperclip CLI under ~/.paperclip/cli,
+# and can register a background service. API on http://localhost:3100.
+# ---------------------------------------------------------------------------
+if [[ "$WITH_PAPERCLIP" == true ]]; then
+  header "Phase 4.5: Paperclip (optional dashboard)"
+
+  # Node.js 20+ is required; the managed installer can bootstrap it, but we
+  # check first so the requirement is visible in the log.
+  if command -v node >/dev/null 2>&1; then
+    NODE_MAJOR="$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
+    info "Node.js detected: $(node --version 2>/dev/null)"
+    [[ "${NODE_MAJOR}" -lt 20 ]] && warn "Node.js < 20 — the installer will attempt to bootstrap a newer Node"
+  else
+    info "No Node.js found — the installer will bootstrap Node.js 20+"
+  fi
+
+  info "Downloading the official installer (with sha256 verification)..."
+  PC_TMP="$(mktemp -d)"
+  if curl -fsSLo "${PC_TMP}/install.sh" https://paperclip.ing/install.sh \
+     && curl -fsSLo "${PC_TMP}/install.sh.sha256" https://paperclip.ing/install.sh.sha256 \
+     && (cd "${PC_TMP}" && sha256sum -c install.sh.sha256 >/dev/null 2>&1); then
+    log "Installer downloaded and verified"
+    info "Running Paperclip installer (non-interactive)..."
+    if bash "${PC_TMP}/install.sh" --no-prompt --no-onboard; then
+      log "Paperclip CLI installed under ~/.paperclip/cli"
+      # Onboarding creates the config + local database. Loopback bind keeps
+      # the dashboard private to this machine; use `paperclipai onboard --bind
+      # lan` manually if you want it reachable on your LAN.
+      if command -v paperclipai >/dev/null 2>&1; then
+        info "Running onboarding (loopback mode)..."
+        paperclipai onboard --yes && log "Paperclip onboarded — dashboard at http://localhost:3100" \
+          || warn "Onboarding incomplete — run: paperclipai onboard --yes"
+      else
+        warn "paperclipai CLI not on PATH yet — restart your shell, then: paperclipai onboard --yes"
+      fi
+    else
+      warn "Paperclip installer failed — install manually: https://github.com/paperclipai/paperclip#quickstart"
+    fi
+  else
+    warn "Could not download/verify installer — install manually: https://github.com/paperclipai/paperclip#quickstart"
+  fi
+  rm -rf "${PC_TMP}"
+else
+  info "Paperclip skipped (optional — rerun with --with-paperclip)"
+fi  # end WITH_PAPERCLIP
+
+
+# ---------------------------------------------------------------------------
 # Phase 5 — Summary
 # ---------------------------------------------------------------------------
 header "Installation Complete"
@@ -821,12 +1025,13 @@ set +eu
 source "${CREDS_FILE}" 2>/dev/null || true
 set -eu
 
-HERMES_OK=false; GATEWAY_OK=false; SYNAPSE_OK=false; ELEMENT_OK=false; MEMPALACE_OK=false
+HERMES_OK=false; GATEWAY_OK=false; SYNAPSE_OK=false; ELEMENT_OK=false; MEMOK=false; PC_OK=false
 hermes --version &>/dev/null && HERMES_OK=true || true
 systemctl --user is-active hermes-gateway &>/dev/null && GATEWAY_OK=true || true
 curl -sf http://127.0.0.1:${MATRIX_PORT}/_matrix/client/versions &>/dev/null && SYNAPSE_OK=true || true
 command -v element-desktop &>/dev/null && ELEMENT_OK=true || true
-command -v mempalace &>/dev/null && MEMPALACE_OK=true || true
+[[ -d "${VAULT_HOME}/Daily" ]] && [[ -x "${HERMES_VENV}/bin/mnemosyne-hermes" ]] && MEMOK=true || true
+command -v paperclipai &>/dev/null && PC_OK=true || true
 
 status() { [[ "$1" == true ]] && echo -e "${GREEN}✓${NC}" || { echo -e "${RED}✗${NC}"; true; }; }
 
@@ -838,13 +1043,19 @@ echo    "  ───────────────────────
 echo -e "  Matrix Synapse        $(status $SYNAPSE_OK)         http://0.0.0.0:${MATRIX_PORT}  (LAN: http://<VM-IP>:${MATRIX_PORT})"
 echo -e "  Hermes Agent          $(status $HERMES_OK)         $(hermes --version 2>&1 | head -1)"
 echo -e "  Donbot Gateway        $(status $GATEWAY_OK)         systemctl --user status hermes-gateway"
-echo -e "  MemPalace             $(status $MEMPALACE_OK)         ${MEMPALACE_HOME}/data/"
+echo -e "  Agent Memory          $(status $MEMOK)         Mnemosyne + vault: ${VAULT_HOME}"
+[[ "$WITH_PAPERCLIP" == true ]] && echo -e "  Paperclip             $(status $PC_OK)         http://localhost:3100"
 echo -e "  Element Desktop       $(status $ELEMENT_OK)         element-desktop"
 echo ""
 echo -e "${BOLD}  Matrix access:${NC}"
 echo    "    Homeserver : http://localhost:${MATRIX_PORT}"
 echo    "    Operator   : @${MATRIX_ADMIN_USER}:${MATRIX_DOMAIN} / ${MATRIX_ADMIN_PASS}"
 echo    "    Donbot CEO : @${CEO_USER}:${MATRIX_DOMAIN} / (see ${CREDS_FILE})"
+echo ""
+echo -e "${BOLD}  Memory system:${NC}"
+echo    "    Facts      : Mnemosyne (per-agent SQLite, hybrid recall)"
+echo    "    Long record: ${VAULT_HOME} (daily pages, issues log)"
+echo    "    Rituals    : matins 06:50 weekdays, vespers 22:00 daily (crontab -l)"
 echo ""
 echo -e "${BOLD}  Next steps:${NC}"
 echo    "    1. Configure your inference provider:"
@@ -853,6 +1064,8 @@ echo    "    2. Talk to Donbot:  hermes chat"
 echo    "    3. Open Element Desktop → http://localhost:${MATRIX_PORT}"
 echo    "    4. Hire more agents:  bash hire.sh --title '...' --skill blender-mcp"
 echo    "       (hire.sh auto-assigns a Futurama robot name)"
+[[ "$WITH_PAPERCLIP" != true ]] && \
+echo    "    5. Optional dashboard:  bash launch.sh --with-paperclip (Paperclip)"
 echo ""
 echo -e "${BOLD}  Credentials: ${CREDS_FILE}${NC}"
 echo ""
