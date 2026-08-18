@@ -109,6 +109,7 @@ systemctl --user restart hermes-gateway-<botname>
 ## Known Gotchas (already handled in scripts)
 
 - `hermes.nousresearch.com` returns 429 — scripts clone Hermes directly from GitHub
+- GitHub itself intermittently throttles `NousResearch/hermes-agent` (429 on codeload, `info/refs` hangs with no response; other repos unaffected) — launch.sh's clone retries 5× with backoff and a 10-min `timeout` per attempt instead of hanging forever
 - hermes-agent's npm package requires **node >=22.22.0** — Debian 13 stock node 20.x fails with EBADENGINE. launch.sh installs Node 22 from NodeSource (arm64 + amd64) and gates on the minimum version
 - `@admin` must be registered with `-a` (admin flag) for the Synapse admin API to work
 - Paperclip is installed via the managed npm CLI (`npx --yes paperclipai@latest install --yes` + `paperclipai onboard --yes --install-service`), NOT via `paperclip.ing/install.sh` — as of 2026-08-18 that script forwards `--no-prompt` to the CLI, which no longer accepts it, and it force-enables the flag on any non-TTY (scripted) run

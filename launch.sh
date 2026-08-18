@@ -491,15 +491,31 @@ if [[ "$SKIP_HERMES" == true ]]; then
 else
   header "Phase 3: Hermes Agent"
 
-  # Clone Hermes (or update if already present)
+  # Clone Hermes (or update if already present).
+  # GitHub intermittently throttles this repo specifically (429s on
+  # codeload, info/refs requests that hang with no response — other repos
+  # clone fine while this one stalls), so retry with backoff instead of
+  # hanging forever. No --quiet: we want to see git's own progress/errors.
   if [[ ! -d "${HERMES_AGENT_DIR}/.git" ]]; then
     info "Cloning Hermes Agent from GitHub..."
-    git clone --recurse-submodules "${HERMES_GITHUB}" "${HERMES_AGENT_DIR}" --quiet
-    log "Hermes cloned to ${HERMES_AGENT_DIR}"
+    CLONE_OK=false
+    for attempt in 1 2 3 4 5; do
+      if timeout 600 git clone --recurse-submodules "${HERMES_GITHUB}" "${HERMES_AGENT_DIR}"; then
+        CLONE_OK=true
+        break
+      fi
+      rm -rf "${HERMES_AGENT_DIR}"
+      [[ $attempt -eq 5 ]] && break
+      warn "Clone attempt ${attempt}/5 failed (GitHub throttling is common for this repo) — retrying in $((attempt * 20))s..."
+      sleep $((attempt * 20))
+    done
+    [[ "$CLONE_OK" == true ]] \
+      && log "Hermes cloned to ${HERMES_AGENT_DIR}" \
+      || error "Could not clone Hermes after 5 attempts — GitHub is throttling; try again later or clone manually: git clone --recurse-submodules ${HERMES_GITHUB} ${HERMES_AGENT_DIR}"
   else
     info "Hermes already cloned — pulling latest..."
-    git -C "${HERMES_AGENT_DIR}" pull --quiet || warn "Could not pull (working-tree changes?)"
-    git -C "${HERMES_AGENT_DIR}" submodule update --init --recursive --quiet || true
+    timeout 300 git -C "${HERMES_AGENT_DIR}" pull || warn "Could not pull (working-tree changes? retry later?)"
+    timeout 300 git -C "${HERMES_AGENT_DIR}" submodule update --init --recursive || true
   fi
 
   # Create Python 3.11 venv via uv
