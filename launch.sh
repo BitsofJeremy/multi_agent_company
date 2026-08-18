@@ -1003,50 +1003,50 @@ fi  # end Donbot config
 # budgets) from https://github.com/paperclipai/paperclip. The company runs
 # perfectly without it — Donbot coordinates over Matrix — so this is opt-in.
 #
-# Install path: the official managed installer (checksummed), non-interactive.
-# It ensures Node.js 20+, installs the Paperclip CLI under ~/.paperclip/cli,
-# and can register a background service. API on http://localhost:3100.
+# Install path: direct managed-CLI install via npx. Do NOT use
+# paperclip.ing/install.sh — as of 2026-08-18 it forwards --no-prompt to the
+# paperclipai CLI, which no longer accepts that flag (renamed to -y/--yes),
+# and the script force-enables --no-prompt on any non-TTY (scripted) run, so
+# every non-interactive invocation fails with "unknown option '--no-prompt'".
+# The direct call below is the supported non-interactive path per their
+# README and installs the CLI under ~/.paperclip/cli. API on
+# http://localhost:3100 once onboarded.
 # ---------------------------------------------------------------------------
 if [[ "$WITH_PAPERCLIP" == true ]]; then
   header "Phase 4.5: Paperclip (optional dashboard)"
 
   # Node.js 20+ is required; Phase 1 installs Node 22 by default
   # (hermes-agent needs >=22.22.0), so this check normally passes already.
-  # The managed installer can bootstrap its own Node if ever run standalone.
   if command -v node >/dev/null 2>&1; then
     NODE_MAJOR="$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
     info "Node.js detected: $(node --version 2>/dev/null)"
-    [[ "${NODE_MAJOR}" -lt 20 ]] && warn "Node.js < 20 — the installer will attempt to bootstrap a newer Node"
+    [[ "${NODE_MAJOR}" -lt 20 ]] && error "Paperclip needs Node.js >= 20 — fix Node before continuing"
   else
-    info "No Node.js found — the installer will bootstrap Node.js 20+"
+    error "No Node.js found — Paperclip needs Node.js >= 20"
   fi
 
-  info "Downloading the official installer (with sha256 verification)..."
-  PC_TMP="$(mktemp -d)"
-  if curl -fsSLo "${PC_TMP}/install.sh" https://paperclip.ing/install.sh \
-     && curl -fsSLo "${PC_TMP}/install.sh.sha256" https://paperclip.ing/install.sh.sha256 \
-     && (cd "${PC_TMP}" && sha256sum -c install.sh.sha256 >/dev/null 2>&1); then
-    log "Installer downloaded and verified"
-    info "Running Paperclip installer (non-interactive)..."
-    if bash "${PC_TMP}/install.sh" --no-prompt --no-onboard; then
-      log "Paperclip CLI installed under ~/.paperclip/cli"
-      # Onboarding creates the config + local database. Loopback bind keeps
-      # the dashboard private to this machine; use `paperclipai onboard --bind
-      # lan` manually if you want it reachable on your LAN.
-      if command -v paperclipai >/dev/null 2>&1; then
-        info "Running onboarding (loopback mode)..."
-        paperclipai onboard --yes && log "Paperclip onboarded — dashboard at http://localhost:3100" \
-          || warn "Onboarding incomplete — run: paperclipai onboard --yes"
-      else
-        warn "paperclipai CLI not on PATH yet — restart your shell, then: paperclipai onboard --yes"
-      fi
-    else
-      warn "Paperclip installer failed — install manually: https://github.com/paperclipai/paperclip#quickstart"
-    fi
+  if ! command -v paperclipai >/dev/null 2>&1; then
+    info "Installing Paperclip CLI (direct npx call)..."
+    npx --yes paperclipai@latest install --yes \
+      && log "Paperclip CLI installed under ~/.paperclip/cli" \
+      || warn "Paperclip install failed — install manually: https://github.com/paperclipai/paperclip#quickstart"
   else
-    warn "Could not download/verify installer — install manually: https://github.com/paperclipai/paperclip#quickstart"
+    log "Paperclip CLI already installed"
   fi
-  rm -rf "${PC_TMP}"
+
+  # Onboarding creates the config + local database. Loopback bind keeps
+  # the dashboard private to this machine; use `paperclipai onboard --bind
+  # lan` manually if you want it reachable on your LAN.
+  export PATH="${HOME}/.paperclip/cli:${HOME}/.local/bin:${PATH}"
+  if command -v paperclipai >/dev/null 2>&1; then
+    info "Running onboarding (loopback mode, non-interactive)..."
+    paperclipai onboard --yes --install-service \
+      && log "Paperclip onboarded — dashboard at http://localhost:3100" \
+      || warn "Onboarding incomplete — run: paperclipai onboard --yes --install-service"
+    log "Paperclip: $(paperclipai --version 2>&1 | head -1)"
+  else
+    warn "paperclipai CLI not on PATH yet — restart your shell, then: paperclipai onboard --yes"
+  fi
 else
   info "Paperclip skipped (optional — rerun with --with-paperclip)"
 fi  # end WITH_PAPERCLIP

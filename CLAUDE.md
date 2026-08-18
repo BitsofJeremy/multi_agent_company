@@ -54,7 +54,7 @@ The company heartbeat: one screen showing Synapse health, every agent gateway st
 - `~/.hermes/profiles/<name>/mnemosyne/data/mnemosyne.db` — per-agent fact stores
 - `~/vault/` — the company vault (Obsidian): Daily/, Projects/, System/, Inbox/, People/, Work/, Personal/
 - `~/rituals.log` — matins/vespers output (cron)
-- `~/paperclip/` — Paperclip source clone (optional)
+- `~/.paperclip/cli/` — Paperclip managed CLI install (optional)
 - `~/Downloads/matrix_credentials.env` — All generated passwords and room IDs (source of truth for secrets)
 - `/etc/matrix-synapse/` — Synapse config
 - `~/.config/systemd/user/hermes-gateway-<botname>.service` — Per-bot gateway services
@@ -111,7 +111,7 @@ systemctl --user restart hermes-gateway-<botname>
 - `hermes.nousresearch.com` returns 429 — scripts clone Hermes directly from GitHub
 - hermes-agent's npm package requires **node >=22.22.0** — Debian 13 stock node 20.x fails with EBADENGINE. launch.sh installs Node 22 from NodeSource (arm64 + amd64) and gates on the minimum version
 - `@admin` must be registered with `-a` (admin flag) for the Synapse admin API to work
-- Paperclip requires `@paperclipai/plugin-sdk` to be built (`pnpm --filter @paperclipai/plugin-sdk build`) before first launch
+- Paperclip is installed via the managed npm CLI (`npx --yes paperclipai@latest install --yes` + `paperclipai onboard --yes --install-service`), NOT via `paperclip.ing/install.sh` — as of 2026-08-18 that script forwards `--no-prompt` to the CLI, which no longer accepts it, and it force-enables the flag on any non-TTY (scripted) run
 - `set -euo pipefail` + password sourcing: always guard with `set +eu` / `set -eu`
 - There is no `hermes mnemosyne setup` subcommand — the installer is the `mnemosyne-hermes` binary in the Hermes venv (`~/.hermes/hermes-agent/venv/bin/mnemosyne-hermes install --hermes-home <dir>`)
 - SQLite counts in status.sh open the DBs read-only (`sqlite3 -readonly`) — safe against live WAL writes by running gateways
