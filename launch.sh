@@ -1050,15 +1050,30 @@ if [[ "$WITH_PAPERCLIP" == true ]]; then
     log "Paperclip CLI already installed"
   fi
 
-  # Onboarding creates the config + local database. Loopback bind keeps
-  # the dashboard private to this machine; use `paperclipai onboard --bind
-  # lan` manually if you want it reachable on your LAN.
+  # Onboarding creates the config + local database (quickstart defaults:
+  # loopback bind keeps the dashboard private to this machine; use
+  # `paperclipai onboard --bind lan` manually if you want LAN reach).
+  # NOTE: `onboard --yes --install-service` exits non-zero when the service
+  # it just started is already running (their idempotency bug), so judge
+  # success by service/dashboard state, not the exit code. If the config
+  # already exists, onboarding is skipped entirely.
   export PATH="${HOME}/.paperclip/cli:${HOME}/.local/bin:${PATH}"
+  PC_CONFIG="${HOME}/.paperclip/instances/default/config.json"
   if command -v paperclipai >/dev/null 2>&1; then
-    info "Running onboarding (loopback mode, non-interactive)..."
-    paperclipai onboard --yes --install-service \
-      && log "Paperclip onboarded — dashboard at http://localhost:3100" \
-      || warn "Onboarding incomplete — run: paperclipai onboard --yes --install-service"
+    if [[ -f "${PC_CONFIG}" ]]; then
+      log "Paperclip already onboarded (config exists) — skipping quickstart"
+      systemctl --user start paperclipai.service 2>/dev/null || true
+    else
+      info "Running onboarding (loopback mode, non-interactive)..."
+      paperclipai onboard --yes --install-service \
+        || warn "Onboarding exited non-zero — checking service state below (known false negative)"
+    fi
+    if curl -sfo /dev/null --max-time 5 http://127.0.0.1:3100 \
+       || systemctl --user is-active --quiet paperclipai.service 2>/dev/null; then
+      log "Paperclip running — dashboard at http://localhost:3100"
+    else
+      warn "Paperclip does not appear to be running — try: paperclipai run"
+    fi
     log "Paperclip: $(paperclipai --version 2>&1 | head -1)"
   else
     warn "paperclipai CLI not on PATH yet — restart your shell, then: paperclipai onboard --yes"
