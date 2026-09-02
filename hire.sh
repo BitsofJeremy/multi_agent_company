@@ -46,7 +46,10 @@ MATRIX_DOMAIN="localhost"
 MATRIX_PORT="8008"
 MATRIX_ADMIN_USER="admin"
 MATRIX_ADMIN_PASS="changeme"
-CEO_USER="donbot"
+# Derive the CEO name from the default profile's .env (launch.sh --ceo may
+# have renamed it from 'donbot'); fall back to the default.
+CEO_USER="$(grep -m1 '^MATRIX_USER_ID=' "${HOME}/.hermes/.env" 2>/dev/null | cut -d= -f2- | sed 's/^@//; s/:.*//' || true)"
+CEO_USER="${CEO_USER:-donbot}"
 
 HERMES_HOME="${HOME}/.hermes"
 HERMES_AGENT_DIR="${HERMES_HOME}/hermes-agent"
@@ -166,6 +169,9 @@ names = sys.argv[1:]
 random.shuffle(names)
 print(' '.join(names))
 " "${FUTURAMA_NAMES[@]}"); do
+    # Never draw the CEO's name (it has no profile dir, so the checks below
+    # alone wouldn't catch it if Synapse is down)
+    [[ "${_candidate}" == "${CEO_USER}" ]] && continue
     # Skip if Matrix user or Hermes profile already exists
     PROFILE_EXISTS=false
     [[ -d "${HERMES_HOME}/profiles/${_candidate}" ]] && PROFILE_EXISTS=true
@@ -371,12 +377,47 @@ for key, val in updates.items():
 for key in ["TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USERS", "TELEGRAM_HOME_CHANNEL"]:
     content = re.sub(rf"^({key}=.+)$", r"# \1", content, flags=re.MULTILINE)
 
+# Comment out A2A keys — A2A is CEO-only (default profile). Profiles are
+# clones, so without this every hired bot would inherit the CEO's token and
+# the 0.0.0.0 bind and collide on port 9900. Anchored ^key= so an
+# already-commented line is left alone (idempotent).
+for key in ["A2A_BEARER_TOKEN", "A2A_HOST", "A2A_PORT", "A2A_PEER_TOKENS"]:
+    content = re.sub(rf"^({key}=.+)$", r"# \1  # CEO-only — stripped by hire.sh",
+                     content, flags=re.MULTILINE)
+
 with open(env_path, "w") as f:
     f.write(content)
 print(f"  Profile .env configured")
 PYEOF
 
 log "Profile .env configured"
+
+# ---------------------------------------------------------------------------
+# Step 4b — Strip CEO-only A2A config from the cloned config.yaml
+#
+# Belt-and-braces with the .env strip above: the clone also inherits the
+# default profile's gateway.platforms.a2 block. Replace any inherited block
+# with enabled: false so the bot's gateway never tries to bind port 9900.
+# No-op when the CEO has no A2A configured.
+# ---------------------------------------------------------------------------
+if [[ -f "${PROFILE_DIR}/config.yaml" ]]; then
+  python3 - "${PROFILE_DIR}/config.yaml" <<'PYEOF'
+import sys, re
+cfg = sys.argv[1]
+with open(cfg) as f:
+    content = f.read()
+# Match the 4-space 'a2a:' header (under gateway.platforms) plus every
+# deeper-indented child line, replace with a disabled one-liner.
+new, n = re.subn(
+    r"(?m)^    a2a:\n(?: {6,}[^\n]*\n?)*",
+    "    a2a:\n      enabled: false   # CEO-only — stripped by hire.sh\n",
+    content)
+if n:
+    with open(cfg, "w") as f:
+        f.write(new)
+    print("  config.yaml → a2a platform disabled (CEO-only)")
+PYEOF
+fi
 
 # ---------------------------------------------------------------------------
 # Step 5 — Write SOUL.md

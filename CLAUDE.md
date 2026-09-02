@@ -4,15 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repo contains Bash scripts for deploying a local multi-agent AI company on a fresh Debian 12/13 VM. The stack is: Matrix Synapse (homeserver), Hermes Agent (AI agents, CEO profile `donbot`), Mnemosyne memory (per-agent SQLite fact stores + CEO Obsidian vault with matins/vespers rituals), Element Desktop (Matrix client), and Paperclip (optional company control plane, `--with-paperclip`).
+This repo contains Bash scripts for deploying a local multi-agent AI company on a fresh Debian 12/13 VM. The stack is: Matrix Synapse (homeserver), Hermes Agent (AI agents, CEO profile `donbot`), Mnemosyne memory (per-agent SQLite fact stores + CEO Obsidian vault with matins/vespers rituals), Element Desktop (Matrix client), Paperclip (optional company control plane, `--with-paperclip`), and an A2A server (optional, CEO-only, `--with-a2a`, port 9900).
 
 ## Core Scripts
 
 ### launch.sh
-One-shot full install. Runs as desktop user (not root), calls `sudo` internally. Idempotent phases can be skipped with `--skip-synapse`, `--skip-hermes`, `--skip-memory`, `--skip-element`; Paperclip is opt-in with `--with-paperclip`. Phase 3.5 installs the memory system (mnemosyne-hermes into the shared Hermes venv, per-profile provider wiring, `~/vault` scaffold, matins/vespers cron rituals for the CEO).
+One-shot full install. Runs as desktop user (not root), calls `sudo` internally. Idempotent phases can be skipped with `--skip-synapse`, `--skip-hermes`, `--skip-memory`, `--skip-element`; Paperclip is opt-in with `--with-paperclip`. Phase 3.5 installs the memory system (mnemosyne-hermes into the shared Hermes venv, per-profile provider wiring, `~/vault` scaffold, matins/vespers cron rituals for the CEO). Phase 4.6 (opt-in, `--with-a2a`) enables the A2A protocol server on the CEO's default profile: `gateway.platforms.a2a` in `~/.hermes/config.yaml` + `A2A_BEARER_TOKEN`/`A2A_HOST=0.0.0.0` in `~/.hermes/.env` + `hermes tools enable a2a --platform cli` + token example at `~/a2a_bearer_token.env`. The CEO name is set at install time with `--ceo <name>` (default `donbot`); hire.sh and status.sh derive the name from `MATRIX_USER_ID` in `~/.hermes/.env`, so they never need the flag.
+
+### setup_vm.sh
+Root-run VM bootstrap (local lab only). `--user <name>` and `--password <pass>` override the default `debian`/`debian` local account (user name, sudoers file, Samba share, smbpasswd all follow); an explicit `--password` on a re-run resets the existing user's password.
 
 ### hire.sh
-Adds a new AI agent bot. Handles Matrix registration, Hermes profile creation, per-agent Mnemosyne fact store, systemd service install, and Paperclip org chart entry in one pass.
+Adds a new AI agent bot. Handles Matrix registration, Hermes profile creation, per-agent Mnemosyne fact store, systemd service install, and Paperclip org chart entry in one pass. Derives the CEO name from `~/.hermes/.env` (launch.sh `--ceo`) for `MATRIX_ALLOWED_USERS`. Strips CEO-only A2A config from cloned profiles (commented `A2A_*` env keys + `gateway.platforms.a2: enabled: false`) — A2A is CEO-only; clones must not bind port 9900.
 
 ### fire.sh
 Reverses hire.sh for a named bot: stops/removes its gateway service, Hermes profile (including its Mnemosyne fact store), Matrix deactivation, and Paperclip entry.
@@ -21,7 +24,7 @@ Reverses hire.sh for a named bot: stops/removes its gateway service, Hermes prof
 Tears down the entire stack. `--keep-vault` preserves the company vault; ritual crontab entries are stripped either way.
 
 ### status.sh
-The company heartbeat: one screen showing Synapse health, every agent gateway state with its memory counts (working/episodic/facts), whether matins/vespers ran, today's vault page, and Paperclip if installed. Exit 0 = healthy, 1 = something down — cron-friendly.
+The company heartbeat: one screen showing Synapse health, every agent gateway state with its memory counts (working/episodic/facts), whether matins/vespers ran, today's vault page, Paperclip if installed, and the A2A agent card if enabled. Exit 0 = healthy, 1 = something down — cron-friendly.
 
 ## Key Conventions
 
@@ -55,6 +58,7 @@ The company heartbeat: one screen showing Synapse health, every agent gateway st
 - `~/vault/` — the company vault (Obsidian): Daily/, Projects/, System/, Inbox/, People/, Work/, Personal/
 - `~/rituals.log` — matins/vespers output (cron)
 - `~/.paperclip/cli/` — Paperclip managed CLI install (optional)
+- `~/a2a_bearer_token.env` — A2A bearer token + curl example (chmod 600; deliberately NOT in matrix_credentials.env)
 - `~/Downloads/matrix_credentials.env` — All generated passwords and room IDs (source of truth for secrets)
 - `/etc/matrix-synapse/` — Synapse config
 - `~/.config/systemd/user/hermes-gateway-<botname>.service` — Per-bot gateway services
@@ -79,6 +83,7 @@ Room IDs (not aliases) are stored in `matrix_credentials.env` as `MATRIX_ROOM_*`
 |---------|-----|
 | Matrix Synapse | `http://127.0.0.1:8008` |
 | Paperclip (optional) | `http://127.0.0.1:3100` |
+| A2A (optional, CEO) | `http://0.0.0.0:9900` — agent card at `/.well-known/agent-card.json`, JSON-RPC tasks at `POST /`, bearer-token protected, LAN-reachable |
 
 ## Operational Commands
 
@@ -114,6 +119,9 @@ systemctl --user restart hermes-gateway-<botname>
 - `@admin` must be registered with `-a` (admin flag) for the Synapse admin API to work
 - Paperclip is installed via the managed npm CLI (`npx --yes paperclipai@latest install --yes` + `paperclipai onboard --yes --install-service`), NOT via `paperclip.ing/install.sh` — as of 2026-08-18 that script forwards `--no-prompt` to the CLI, which no longer accepts it, and it force-enables the flag on any non-TTY (scripted) run
 - `set -euo pipefail` + password sourcing: always guard with `set +eu` / `set -eu`
+- Hermes **refuses a remote A2A bind without a bearer token** — `A2A_BEARER_TOKEN` must be set before `A2A_HOST=0.0.0.0` (launch.sh Phase 4.6 always sets both; token is never rotated on re-run)
+- `hermes profile create --clone` copies the default profile's `.env` + `config.yaml`, so hire.sh Step 4/4b strips `A2A_*` env keys and disables the `gateway.platforms.a2a` block in clones — otherwise every hired bot would try to bind port 9900 and collide with the CEO
+- The CEO name set by `launch.sh --ceo` is only applied at install time; afterwards hire.sh/status.sh derive it from `MATRIX_USER_ID` in `~/.hermes/.env` (fallback `donbot`)
 - There is no `hermes mnemosyne setup` subcommand — the installer is the `mnemosyne-hermes` binary in the Hermes venv (`~/.hermes/hermes-agent/venv/bin/mnemosyne-hermes install --hermes-home <dir>`)
 - SQLite counts in status.sh open the DBs read-only (`sqlite3 -readonly`) — safe against live WAL writes by running gateways
 

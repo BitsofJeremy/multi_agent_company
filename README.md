@@ -2,7 +2,7 @@
 
 > Spin up a fully autonomous AI company on a Debian VM in one command. Real agents. Real coordination. Zero drama.
 
-**Stack:** Matrix Synapse · Hermes Agent · Mnemosyne memory · Obsidian vault · Element Desktop · Paperclip (optional)
+**Stack:** Matrix Synapse · Hermes Agent · Mnemosyne memory · Obsidian vault · Element Desktop · Paperclip (optional) · A2A server (optional)
 
 Your agents run as independent systemd services, each with its own Futurama robot persona, LLM model, skill set, and private memory. **Donbot** (your CEO — a smooth-talking Robot Mafia don) is the only agent who talks to you via Matrix. All peer-agent task delegation flows through Matrix coordination rooms. Add or remove agents anytime.
 
@@ -23,6 +23,7 @@ bash launch.sh
 | **Agent Memory** | Every agent gets a private Mnemosyne fact store (SQLite, hybrid semantic + full-text recall) under `~/.hermes/profiles/<name>/mnemosyne/` |
 | **Company Vault** | Obsidian vault at `~/vault` — the CEO keeps a daily diary, issues log, and project notes; `matins`/`vespers` cron rituals open and close each day |
 | **Paperclip** *(optional)* | Agent-orchestration dashboard (org chart, tasks, budgets) at `http://localhost:3100` — opt in with `--with-paperclip` |
+| **A2A server** *(optional)* | Agent-to-Agent protocol server on the CEO, port 9900 — bearer-token auth, LAN-reachable — opt in with `--with-a2a`; lets other agents/machines dispatch tasks to the CEO (and the CEO send tasks to peers) |
 | **Element Desktop** | Your window into the Matrix — chat with Donbot directly |
 | **Hermes Intelligence Corp** | Pre-configured company with Donbot as founding CEO |
 
@@ -71,7 +72,15 @@ bash launch.sh --skip-hermes      # Hermes already installed
 bash launch.sh --skip-memory      # Mnemosyne + vault already installed
 bash launch.sh --skip-element     # Element already installed
 bash launch.sh --with-paperclip   # also install the Paperclip dashboard (optional)
+bash launch.sh --with-a2a         # also enable the A2A server on the CEO (optional)
+bash launch.sh --ceo bender       # name the CEO agent (default: donbot)
 ```
+
+**A2A** (`--with-a2a`): the CEO's gateway listens on `0.0.0.0:9900` with bearer-token
+auth, so agents and resources on your LAN can call him directly (agent card at
+`/.well-known/agent-card.json`, JSON-RPC 2.0 tasks at `POST /`). The token is saved
+to `~/a2a_bearer_token.env` with a curl example. Hired bots never get a listener —
+`hire.sh` strips A2A config from cloned profiles to avoid a port collision.
 
 ---
 
@@ -151,7 +160,7 @@ bash hire.sh --title "Research Analyst" \
 | User | Matrix ID | Role |
 |------|-----------|------|
 | You | `@admin:localhost` | Human operator (admin) |
-| Donbot | `@donbot:localhost` | Default Hermes profile (CEO) — only agent who talks to you via Matrix |
+| Donbot | `@donbot:localhost` | Default Hermes profile (CEO) — only agent who talks to you via Matrix. Rename at install with `launch.sh --ceo <name>`; `hire.sh`/`status.sh` pick the name up from `~/.hermes/.env` |
 | Any hired agent | `@<botname>:localhost` | Added via `hire.sh`; talks only via Paperclip |
 
 **Default password:** `@admin:localhost` / `changeme`
@@ -221,7 +230,7 @@ hermes profile use flexo && hermes memory status   # a hired agent's store
 | `fire.sh` | Remove an agent and clean up its profile, service, and credentials |
 | `cleanup.sh` | Tear the whole stack back down |
 | `status.sh` | One-screen company heartbeat — services, agents, memory counts, rituals, vault |
-| `setup_vm.sh` | Bootstrap a fresh Debian VM (local lab use — see security note inside) |
+| `setup_vm.sh` | Bootstrap a fresh Debian VM (local lab use — see security note inside). `--user <name>` / `--password <pass>` to override the default `debian`/`debian` local account |
 | `memory/` | The agent memory system: `matins.sh`, `vespers.sh`, `scaffold_vault.sh`, `VAULT_RULES.md` |
 | `names/futurama_robots.txt` | 310 unique Futurama robot names — the hire.sh name pool |
 | `CLAUDE.md` | Guidance for AI coding assistants working in this repo |

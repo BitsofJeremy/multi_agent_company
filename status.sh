@@ -18,6 +18,12 @@ RITUALS_LOG="${HOME}/rituals.log"
 PAPERCLIP_HOME="${HOME}/paperclip"
 TODAY="$(date +%F)"
 
+# CEO name — derived from the default profile's .env (launch.sh --ceo may
+# have renamed it from 'donbot')
+CEO_USER="$(grep -m1 '^MATRIX_USER_ID=' "${HERMES_HOME}/.env" 2>/dev/null | cut -d= -f2- | sed 's/^@//; s/:.*//' || true)"
+CEO_USER="${CEO_USER:-donbot}"
+A2A_TOKEN_FILE="${HOME}/a2a_bearer_token.env"
+
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[0;33m'
 DIM='\033[2m'; BOLD='\033[1m'; NC='\033[0m'
 
@@ -62,14 +68,14 @@ memory_counts() {
   fi
 }
 
-# Donbot (default profile, service 'hermes-gateway')
+# CEO (default profile, service 'hermes-gateway')
 _don="$(svc_state hermes-gateway)"
 if [[ "$_don" == "active" ]]; then
-  ok "donbot (CEO)      active — memory: $(memory_counts "${HERMES_HOME}/mnemosyne/data/mnemosyne.db")"
+  ok "${CEO_USER} (CEO)      active — memory: $(memory_counts "${HERMES_HOME}/mnemosyne/data/mnemosyne.db")"
 elif systemctl --user list-unit-files 2>/dev/null | grep -q '^hermes-gateway\.service'; then
-  bad "donbot (CEO)      ${_don:-unknown}"
+  bad "${CEO_USER} (CEO)      ${_don:-unknown}"
 else
-  na "donbot (CEO)      not installed (run launch.sh)"
+  na "${CEO_USER} (CEO)      not installed (run launch.sh)"
 fi
 
 # Hired bots — one row per installed gateway service
@@ -122,6 +128,34 @@ if [[ -d "${PAPERCLIP_HOME}" ]]; then
   fi
 else
   na "not installed (launch.sh --with-paperclip)"
+fi
+
+# --- A2A (optional, CEO only) -------------------------------------------------
+printf "\n${BOLD}A2A${NC}\n"
+_a2a_cfg="${HERMES_HOME}/config.yaml"
+if [[ -f "${_a2a_cfg}" ]] && grep -q '^    a2a:' "${_a2a_cfg}" 2>/dev/null \
+   && grep -A3 '^    a2a:' "${_a2a_cfg}" | grep -q 'enabled: true'; then
+  _a2a_port="$(grep -A5 '^    a2a:' "${_a2a_cfg}" | grep -m1 -oE 'port: [0-9]+' | grep -oE '[0-9]+' || true)"
+  _a2a_port="${_a2a_port:-9900}"
+  _a2a_auth=()
+  if [[ -f "${A2A_TOKEN_FILE}" ]]; then
+    _tok="$(grep -m1 '^A2A_BEARER_TOKEN=' "${A2A_TOKEN_FILE}" 2>/dev/null | cut -d= -f2- || true)"
+    [[ -n "${_tok}" ]] && _a2a_auth=(-H "Authorization: Bearer ${_tok}")
+  fi
+  # Card may or may not sit behind the bearer — try unauthenticated first
+  _code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "${_a2a_auth[@]}" \
+           "http://127.0.0.1:${_a2a_port}/.well-known/agent-card.json" 2>/dev/null || echo 000)"
+  if [[ ! "${_code}" =~ ^2 ]]; then
+    _code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
+             "http://127.0.0.1:${_a2a_port}/.well-known/agent-card.json" 2>/dev/null || echo 000)"
+  fi
+  if [[ "${_code}" =~ ^2 ]]; then
+    ok "agent card up — http://127.0.0.1:${_a2a_port} (${_code})"
+  else
+    bad "agent card not responding (${_code}) — systemctl --user restart hermes-gateway"
+  fi
+else
+  na "not installed (launch.sh --with-a2a)"
 fi
 
 # --- Verdict -----------------------------------------------------------------

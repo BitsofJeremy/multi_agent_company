@@ -2,17 +2,23 @@
 
 # ==============================================================================
 # SECURITY NOTE: This is a convenience bootstrap for a LOCAL, THROWAWAY VM.
-# It creates a 'debian' user with the password 'debian', grants passwordless
-# sudo, and shares /home/debian over Samba with guest access. That is only
-# acceptable on an isolated lab machine. Change every password, remove
-# NOPASSWD, and disable guest sharing before connecting this VM to any
-# network you care about.
+# It creates a local user (default 'debian') with a default password 'debian',
+# grants passwordless sudo, and shares the user's home over Samba with guest
+# access. That is only acceptable on an isolated lab machine. Override the
+# defaults with --user/--password, remove NOPASSWD, and disable guest sharing
+# before connecting this VM to any network you care about.
 # ==============================================================================
 set -e
 
 # ==============================================================================
 # Unified Debian VM Setup Script
-# Creates debian user, configures sudo, installs dev environment and Samba
+# Creates the local user, configures sudo, installs dev environment and Samba
+#
+# Usage:
+#   setup_vm.sh [--user <name>] [--password <pass>]
+#
+#   --user <name>       Local user to create (default: debian)
+#   --password <pass>   Password for that user (default: debian)
 # ==============================================================================
 
 # Check if running as root
@@ -21,27 +27,55 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+VM_USER="debian"
+VM_PASSWORD="debian"
+PASSWORD_EXPLICIT=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --user)     VM_USER="$2";             shift 2 ;;
+    --password) VM_PASSWORD="$2"; PASSWORD_EXPLICIT=true; shift 2 ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: setup_vm.sh [--user <name>] [--password <pass>]"
+      exit 1
+      ;;
+  esac
+done
+
+if ! [[ "${VM_USER}" =~ ^[a-z][a-z0-9_-]*$ ]]; then
+  echo "Invalid user name: '${VM_USER}' (must match ^[a-z][a-z0-9_-]*\$)"
+  exit 1
+fi
+
+echo "=== Unified Debian VM Setup ==="
+echo "Local user: ${VM_USER}"
+
 echo "=== Unified Debian VM Setup ==="
 
 # ------------------------------------------------------------------------------
-# 1. Create 'debian' user if it doesn't exist
+# 1. Create the local user if it doesn't exist
 # ------------------------------------------------------------------------------
-echo "Setting up 'debian' user..."
-if id "debian" &>/dev/null; then
-    echo "User 'debian' already exists, skipping creation."
+echo "Setting up '${VM_USER}' user..."
+if id "${VM_USER}" &>/dev/null; then
+    echo "User '${VM_USER}' already exists, skipping creation."
+    # An explicit --password is a valid re-run intent: reset it
+    if [ "${PASSWORD_EXPLICIT}" = true ]; then
+        echo "${VM_USER}:${VM_PASSWORD}" | chpasswd
+        echo "Password for '${VM_USER}' reset from --password."
+    fi
 else
-    useradd -m -s /bin/bash debian
-    echo "debian:debian" | chpasswd
-    echo "User 'debian' created with password 'debian'"
+    useradd -m -s /bin/bash "${VM_USER}"
+    echo "${VM_USER}:${VM_PASSWORD}" | chpasswd
+    echo "User '${VM_USER}' created."
 fi
 
 # ------------------------------------------------------------------------------
-# 2. Configure passwordless sudo for 'debian' user
+# 2. Configure passwordless sudo for the user
 # ------------------------------------------------------------------------------
-echo "Configuring passwordless sudo for 'debian'..."
-if [ ! -f /etc/sudoers.d/debian_nopasswd ]; then
-    echo "debian ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/debian_nopasswd
-    chmod 0440 /etc/sudoers.d/debian_nopasswd
+echo "Configuring passwordless sudo for '${VM_USER}'..."
+if [ ! -f "/etc/sudoers.d/${VM_USER}_nopasswd" ]; then
+    echo "${VM_USER} ALL=(ALL) NOPASSWD: ALL" > "/etc/sudoers.d/${VM_USER}_nopasswd"
+    chmod 0440 "/etc/sudoers.d/${VM_USER}_nopasswd"
     echo "Passwordless sudo configured."
 else
     echo "Passwordless sudo already configured."
@@ -152,22 +186,23 @@ cat <<EOF > /etc/samba/smb.conf
    directory mask = 0700
    valid users = %S
 
-[debian]
-   path = /home/debian
-   comment = Debian User Home
+[${VM_USER}]
+   path = /home/${VM_USER}
+   comment = ${VM_USER} User Home
    browseable = yes
    read only = no
    writable = yes
-   valid users = debian
+   valid users = ${VM_USER}
    create mask = 0644
    directory mask = 0755
-   force user = debian
+   force user = ${VM_USER}
    vfs objects = fruit streams_xattr
 EOF
 
-# Set Samba password for debian user
-echo "Setting Samba password for 'debian'..."
-(echo "debian"; echo "debian") | smbpasswd -a debian -s
+# Set Samba password for the user (runs on re-runs too, keeping the Samba
+# password in sync with the Unix password)
+echo "Setting Samba password for '${VM_USER}'..."
+(echo "${VM_PASSWORD}"; echo "${VM_PASSWORD}") | smbpasswd -a "${VM_USER}" -s
 
 # Restart Samba services
 systemctl restart smbd nmbd
@@ -231,15 +266,15 @@ echo "Sublime:   $(subl --version 2>/dev/null || echo 'installed (subl not in PA
 echo "Brave:     $(brave-browser --version 2>/dev/null || echo 'installed')"
 echo ""
 echo "Samba shares configured:"
-echo "  - [homes]    -> /home/* (per-user home)"
-echo "  - [debian]   -> /home/debian"
+echo "  - [homes]      -> /home/* (per-user home)"
+echo "  - [${VM_USER}] -> /home/${VM_USER}"
 echo ""
 IP_ADDR=$(hostname -I | awk '{print $1}')
 echo "VM IP address: $IP_ADDR"
 echo ""
 echo "============================================================"
 echo "To connect from macOS Finder:"
-echo "  Cmd+K -> smb://$IP_ADDR/debian"
-echo "  Username: debian"
-echo "  Password: debian"
+echo "  Cmd+K -> smb://$IP_ADDR/${VM_USER}"
+echo "  Username: ${VM_USER}"
+echo "  Password: (the --password you set, or 'debian' by default)"
 echo "============================================================"
