@@ -82,6 +82,17 @@ auth, so agents and resources on your LAN can call him directly (agent card at
 to `~/a2a_bearer_token.env` with a curl example. Hired bots never get a listener —
 `hire.sh` strips A2A config from cloned profiles to avoid a port collision.
 
+**Synapse-less / Element-less install** — Hermes + memory + A2A with a named CEO, no Matrix:
+
+```bash
+bash launch.sh --skip-synapse --skip-element --with-a2a --ceo hestia
+```
+
+Phase 4 detects the missing homeserver and skips all Matrix wiring (registration,
+room joins, `.env` Matrix block) instead of failing; the CEO is reachable over A2A
+on port 9900. Note `hire.sh` still requires a running Synapse — on a Synapse-less
+box, peers connect inbound via A2A rather than being hired locally.
+
 ---
 
 ### 3. Hire a new agent

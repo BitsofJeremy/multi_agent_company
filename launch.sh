@@ -807,11 +807,23 @@ else
   set -eu
   REG_SHARED_SECRET="${SYNAPSE_REG_SHARED_SECRET:-}"
 
+  # Synapse reachability gate: --skip-synapse on a box with no Synapse at all
+  # (Hermes + memory + A2A only) must not die on the Matrix wiring below.
+  if curl -sf --max-time 3 "http://127.0.0.1:${MATRIX_PORT}/_matrix/client/versions" >/dev/null 2>&1; then
+    SYNAPSE_UP=true
+  else
+    SYNAPSE_UP=false
+  fi
+
+  if [[ "${SYNAPSE_UP}" != true ]]; then
+    warn "Synapse not reachable at http://127.0.0.1:${MATRIX_PORT} — skipping ALL Matrix wiring for ${CEO_USER} (registration, room joins, .env Matrix block). A2A (if --with-a2a) still works."
+  fi
+
   # Generate CEO password if not already set (key follows the
   # MATRIX_<BOTNAME_UPPERCASED> convention)
   CEO_PASS_KEY="MATRIX_$(echo "${CEO_USER}" | tr '[:lower:]' '[:upper:]')"
   CEO_PASS_VALUE="${!CEO_PASS_KEY:-}"
-  if [[ -z "${CEO_PASS_VALUE}" ]]; then
+  if [[ -z "${CEO_PASS_VALUE}" && "${SYNAPSE_UP}" == true ]]; then
     CEO_PASS=$(gen_password)
     echo "${CEO_PASS_KEY}='${CEO_PASS}'" >> "${CREDS_FILE}"
   else
@@ -819,7 +831,9 @@ else
   fi
 
   # Register the CEO (non-admin)
-  if [[ -n "${REG_SHARED_SECRET}" ]]; then
+  if [[ "${SYNAPSE_UP}" != true ]]; then
+    info "No Synapse — nothing to register @${CEO_USER} against"
+  elif [[ -n "${REG_SHARED_SECRET}" ]]; then
     info "Registering @${CEO_USER}:${MATRIX_DOMAIN}..."
     sudo -u synapse /opt/synapse/venv/bin/register_new_matrix_user \
       -u "${CEO_USER}" \
@@ -834,8 +848,9 @@ else
   fi
 
   # Join the CEO to all rooms using admin token
-  info "Joining @${CEO_USER} to coordination rooms..."
-  python3 << PYEOF
+  if [[ "${SYNAPSE_UP}" == true ]]; then
+    info "Joining @${CEO_USER} to coordination rooms..."
+    python3 << PYEOF
 import json, urllib.request, sys
 
 HS     = "http://127.0.0.1:${MATRIX_PORT}"
@@ -880,14 +895,19 @@ for room_id in room_ids:
 
 print(f"  Joined @${CEO_USER} to {joined} room(s)")
 PYEOF
+  fi  # end SYNAPSE_UP room joins
 
   # MATRIX_ALLOWED_USERS — the CEO only talks to the human admin via Matrix.
   # All bot-to-bot comms go through Paperclip. Do NOT add bot IDs here.
   ALLOWED_USERS="@${MATRIX_ADMIN_USER}:${MATRIX_DOMAIN}"
 
-  # Write Matrix + memory config into Hermes default .env
+  # Write Matrix + memory config into Hermes default .env. Without Synapse
+  # there is no Matrix account to point at — leave the .env Matrix-free so
+  # the gateway doesn't retry a dead homeserver forever.
   ENV_FILE="${HERMES_HOME}/.env"
-  if ! grep -q "MATRIX_HOMESERVER" "${ENV_FILE}" 2>/dev/null; then
+  if [[ "${SYNAPSE_UP}" != true ]]; then
+    info "Skipping Matrix .env block (no Synapse)"
+  elif ! grep -q "MATRIX_HOMESERVER" "${ENV_FILE}" 2>/dev/null; then
     cat >> "${ENV_FILE}" << EOF
 
 # =============================================================================
@@ -906,6 +926,14 @@ EOF
     sed -i "s|^MATRIX_PASSWORD=.*|MATRIX_PASSWORD=${CEO_PASS}|" "${ENV_FILE}"
     sed -i "s|^MATRIX_ALLOWED_USERS=.*|MATRIX_ALLOWED_USERS=${ALLOWED_USERS}|" "${ENV_FILE}"
     log "Matrix config updated in ~/.hermes/.env"
+  fi
+
+  # Always record the CEO identity — hire.sh/status.sh derive it from here
+  # (MATRIX_USER_ID first, this as fallback for Synapse-less A2A-only boxes)
+  if grep -q '^HERMES_CEO_NAME=' "${ENV_FILE}" 2>/dev/null; then
+    sed -i "s|^HERMES_CEO_NAME=.*|HERMES_CEO_NAME=${CEO_USER}|" "${ENV_FILE}"
+  else
+    echo "HERMES_CEO_NAME=${CEO_USER}" >> "${ENV_FILE}"
   fi
 
   # Model is configured via 'hermes model' — do not hardcode a default here

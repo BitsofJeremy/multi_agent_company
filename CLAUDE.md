@@ -121,7 +121,8 @@ systemctl --user restart hermes-gateway-<botname>
 - `set -euo pipefail` + password sourcing: always guard with `set +eu` / `set -eu`
 - Hermes **refuses a remote A2A bind without a bearer token** — `A2A_BEARER_TOKEN` must be set before `A2A_HOST=0.0.0.0` (launch.sh Phase 4.6 always sets both; token is never rotated on re-run)
 - `hermes profile create --clone` copies the default profile's `.env` + `config.yaml`, so hire.sh Step 4/4b strips `A2A_*` env keys and disables the `gateway.platforms.a2a` block in clones — otherwise every hired bot would try to bind port 9900 and collide with the CEO
-- The CEO name set by `launch.sh --ceo` is only applied at install time; afterwards hire.sh/status.sh derive it from `MATRIX_USER_ID` in `~/.hermes/.env` (fallback `donbot`)
+- The CEO name set by `launch.sh --ceo` is only applied at install time; afterwards hire.sh/status.sh derive it from `MATRIX_USER_ID` in `~/.hermes/.env`, falling back to the `HERMES_CEO_NAME` marker (written by Phase 4 even without Synapse), then `donbot`
+- Synapse-less installs work: `launch.sh --skip-synapse --with-a2a --ceo <name>` on a box with no Synapse skips all Matrix wiring (Phase 4 gates registration/room-joins/.env Matrix block on a reachability check against `:8008`) — Hermes + memory + A2A still install. hire.sh does NOT support this mode (it requires a running Synapse); peers reach the CEO over A2A instead
 - There is no `hermes mnemosyne setup` subcommand — the installer is the `mnemosyne-hermes` binary in the Hermes venv (`~/.hermes/hermes-agent/venv/bin/mnemosyne-hermes install --hermes-home <dir>`)
 - SQLite counts in status.sh open the DBs read-only (`sqlite3 -readonly`) — safe against live WAL writes by running gateways
 

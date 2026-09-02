@@ -47,8 +47,10 @@ MATRIX_PORT="8008"
 MATRIX_ADMIN_USER="admin"
 MATRIX_ADMIN_PASS="changeme"
 # Derive the CEO name from the default profile's .env (launch.sh --ceo may
-# have renamed it from 'donbot'); fall back to the default.
+# have renamed it from 'donbot'). MATRIX_USER_ID first; HERMES_CEO_NAME is
+# the fallback on Synapse-less (A2A-only) installs.
 CEO_USER="$(grep -m1 '^MATRIX_USER_ID=' "${HOME}/.hermes/.env" 2>/dev/null | cut -d= -f2- | sed 's/^@//; s/:.*//' || true)"
+[[ -z "${CEO_USER}" ]] && CEO_USER="$(grep -m1 '^HERMES_CEO_NAME=' "${HOME}/.hermes/.env" 2>/dev/null | cut -d= -f2- || true)"
 CEO_USER="${CEO_USER:-donbot}"
 
 HERMES_HOME="${HOME}/.hermes"

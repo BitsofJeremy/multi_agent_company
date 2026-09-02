@@ -19,8 +19,10 @@ PAPERCLIP_HOME="${HOME}/paperclip"
 TODAY="$(date +%F)"
 
 # CEO name — derived from the default profile's .env (launch.sh --ceo may
-# have renamed it from 'donbot')
+# have renamed it from 'donbot'). MATRIX_USER_ID first; HERMES_CEO_NAME is
+# the fallback on Synapse-less (A2A-only) installs.
 CEO_USER="$(grep -m1 '^MATRIX_USER_ID=' "${HERMES_HOME}/.env" 2>/dev/null | cut -d= -f2- | sed 's/^@//; s/:.*//' || true)"
+[[ -z "${CEO_USER}" ]] && CEO_USER="$(grep -m1 '^HERMES_CEO_NAME=' "${HERMES_HOME}/.env" 2>/dev/null | cut -d= -f2- || true)"
 CEO_USER="${CEO_USER:-donbot}"
 A2A_TOKEN_FILE="${HOME}/a2a_bearer_token.env"
 
