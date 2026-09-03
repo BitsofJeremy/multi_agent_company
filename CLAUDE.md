@@ -116,6 +116,8 @@ systemctl --user restart hermes-gateway-<botname>
 - `hermes.nousresearch.com` returns 429 — scripts clone Hermes directly from GitHub
 - GitHub itself intermittently throttles `NousResearch/hermes-agent` (429 on codeload, `info/refs` hangs with no response; other repos unaffected) — launch.sh's clone retries 5× with backoff and a 10-min `timeout` per attempt instead of hanging forever
 - hermes-agent's npm package requires **node >=22.22.0** — Debian 13 stock node 20.x fails with EBADENGINE. launch.sh installs Node 22 from NodeSource (arm64 + amd64) and gates on the minimum version
+- An interrupted clone (OOM kill / timeout on low-RAM boxes like a Pi 3B+ with ~900MB) leaves `~/.hermes/hermes-agent` as a husk: `.git` with no commits, empty worktree. launch.sh's "already cloned" check validates `pyproject.toml` + a resolvable `HEAD`, and wipes + re-clones if either is missing — otherwise `uv pip install -e` fails with the baffling "does not appear to be a Python project"
+- launch.sh caps node's heap (`NODE_OPTIONS=--max-old-space-size=512`) at every npm/npx call site — without it npm's heap growth OOM-kills the whole system on Pi-class hardware (respects a pre-set `NODE_OPTIONS`)
 - `@admin` must be registered with `-a` (admin flag) for the Synapse admin API to work
 - Paperclip is installed via the managed npm CLI (`npx --yes paperclipai@latest install --yes` + `paperclipai onboard --yes --install-service`), NOT via `paperclip.ing/install.sh` — as of 2026-08-18 that script forwards `--no-prompt` to the CLI, which no longer accepts it, and it force-enables the flag on any non-TTY (scripted) run
 - `set -euo pipefail` + password sourcing: always guard with `set +eu` / `set -eu`

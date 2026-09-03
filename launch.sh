@@ -515,7 +515,22 @@ else
   # codeload, info/refs requests that hang with no response — other repos
   # clone fine while this one stalls), so retry with backoff instead of
   # hanging forever. No --quiet: we want to see git's own progress/errors.
-  if [[ ! -d "${HERMES_AGENT_DIR}/.git" ]]; then
+  # A directory with a .git is NOT proof of a working clone — an interrupted
+  # clone (OOM kill / 10-min timeout on low-RAM boxes like a Pi 3B+) leaves a
+  # .git with no commits and an empty worktree, and pip install then fails
+  # with the baffling "does not appear to be a Python project". Require the
+  # project marker AND a resolvable HEAD; otherwise wipe and re-clone.
+  if [[ -d "${HERMES_AGENT_DIR}/.git" ]] \
+     && [[ -f "${HERMES_AGENT_DIR}/pyproject.toml" ]] \
+     && git -C "${HERMES_AGENT_DIR}" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    info "Hermes already cloned — pulling latest..."
+    timeout 300 git -C "${HERMES_AGENT_DIR}" pull || warn "Could not pull (working-tree changes? retry later?)"
+    timeout 300 git -C "${HERMES_AGENT_DIR}" submodule update --init --recursive || true
+  else
+    if [[ -e "${HERMES_AGENT_DIR}" ]]; then
+      warn "Existing ${HERMES_AGENT_DIR} is not a usable checkout (interrupted clone?) — removing and re-cloning"
+      rm -rf "${HERMES_AGENT_DIR}"
+    fi
     info "Cloning Hermes Agent from GitHub..."
     CLONE_OK=false
     for attempt in 1 2 3 4 5; do
@@ -531,10 +546,6 @@ else
     [[ "$CLONE_OK" == true ]] \
       && log "Hermes cloned to ${HERMES_AGENT_DIR}" \
       || error "Could not clone Hermes after 5 attempts — GitHub is throttling; try again later or clone manually: git clone --recurse-submodules ${HERMES_GITHUB} ${HERMES_AGENT_DIR}"
-  else
-    info "Hermes already cloned — pulling latest..."
-    timeout 300 git -C "${HERMES_AGENT_DIR}" pull || warn "Could not pull (working-tree changes? retry later?)"
-    timeout 300 git -C "${HERMES_AGENT_DIR}" submodule update --init --recursive || true
   fi
 
   # Create Python 3.11 venv via uv
@@ -566,12 +577,15 @@ else
   # Install Node.js dependencies (needed for browser tools + future WhatsApp)
   if [[ ! -d "${HERMES_AGENT_DIR}/node_modules" ]]; then
     info "Installing Node.js dependencies..."
-    # Use Hermes's bundled Node if available, otherwise system node
+    # Use Hermes's bundled Node if available, otherwise system node.
+    # Cap the V8 heap: on low-RAM boxes (Pi 3B+ has ~900MB) npm's default
+    # heap growth can OOM-kill the whole system mid-install. 512MB old-space
+    # + swap is enough for npm install; without the cap node can balloon.
     NODE_BIN="${HERMES_HOME}/node/bin/node"
     if [[ -f "${NODE_BIN}" ]]; then
-      (cd "${HERMES_AGENT_DIR}" && "${HERMES_HOME}/node/bin/npm" install --quiet 2>&1 | tail -2)
+      (cd "${HERMES_AGENT_DIR}" && NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=512}" "${HERMES_HOME}/node/bin/npm" install --quiet 2>&1 | tail -2)
     elif command -v node &>/dev/null; then
-      (cd "${HERMES_AGENT_DIR}" && npm install --quiet 2>&1 | tail -2)
+      (cd "${HERMES_AGENT_DIR}" && NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=512}" npm install --quiet 2>&1 | tail -2)
     else
       warn "Node.js not found — skipping npm install (browser tools unavailable)"
     fi
@@ -1093,7 +1107,7 @@ if [[ "$WITH_PAPERCLIP" == true ]]; then
 
   if ! command -v paperclipai >/dev/null 2>&1; then
     info "Installing Paperclip CLI (direct npx call)..."
-    npx --yes paperclipai@latest install --yes \
+    NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=512}" npx --yes paperclipai@latest install --yes \
       && log "Paperclip CLI installed under ~/.paperclip/cli" \
       || warn "Paperclip install failed — install manually: https://github.com/paperclipai/paperclip#quickstart"
   else
