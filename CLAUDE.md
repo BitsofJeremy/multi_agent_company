@@ -8,6 +8,15 @@ This repo contains Bash scripts for deploying a local multi-agent AI company on 
 
 ## Core Scripts
 
+### refinery.py
+Chronic-failure spotter. Complements `status.sh` (is everything up *right now*?) with the other axis: what keeps breaking, quietly, across weeks. Reads tool results from `~/.hermes/state.db` (read-only), scrubs volatile parts (ids/paths/numbers), fingerprints the failure *shape*, and when one shape recurs across sessions (default: 4+ occurrences in 2+ sessions) logs a dated finding to the vault. No host patch, no auto-edits, no LLM calls — evidence only; the CEO judges and writes the lesson.
+
+```bash
+./refinery.py              # scan 14d, append findings to the vault log
+./refinery.py --days 30 --dry-run
+./refinery.py --json       # machine output
+```
+
 ### launch.sh
 One-shot full install. Runs as desktop user (not root), calls `sudo` internally. Idempotent phases can be skipped with `--skip-synapse`, `--skip-hermes`, `--skip-memory`, `--skip-element`; Paperclip is opt-in with `--with-paperclip`. Phase 3.5 installs the memory system (mnemosyne-hermes into the shared Hermes venv, per-profile provider wiring, `~/vault` scaffold, matins/vespers cron rituals for the CEO). Phase 4.6 (opt-in, `--with-a2a`) enables the A2A protocol server on the CEO's default profile: `gateway.platforms.a2a` in `~/.hermes/config.yaml` + `A2A_BEARER_TOKEN`/`A2A_HOST=0.0.0.0` in `~/.hermes/.env` + `hermes tools enable a2a --platform cli` + token example at `~/a2a_bearer_token.env`. The CEO name is set at install time with `--ceo <name>` (default `donbot`); hire.sh and status.sh derive the name from `MATRIX_USER_ID` in `~/.hermes/.env`, so they never need the flag.
 

@@ -241,6 +241,7 @@ hermes profile use flexo && hermes memory status   # a hired agent's store
 | `fire.sh` | Remove an agent and clean up its profile, service, and credentials |
 | `cleanup.sh` | Tear the whole stack back down |
 | `status.sh` | One-screen company heartbeat — services, agents, memory counts, rituals, vault |
+| `refinery.py` | Chronic-failure spotter — fingerprints recurring tool failures across sessions in `~/.hermes/state.db` and logs them to the vault (`System/Assistant/logs/refinery-log.md`). Read-only, stdlib-only, no LLM calls. Provenance: idea adapted from Bergschloss's Refine-Cycle plugin (deliberately *not* installed — it patches the Hermes host source and disables the write-approval gate); this is an independent, evidence-only implementation. Usage: `./refinery.py [--days 14] [--dry-run] [--json]`; finds land in the vault for the CEO to judge. |
 | `setup_vm.sh` | Bootstrap a fresh Debian VM (local lab use — see security note inside). `--user <name>` / `--password <pass>` to override the default `debian`/`debian` local account |
 | `memory/` | The agent memory system: `matins.sh`, `vespers.sh`, `scaffold_vault.sh`, `VAULT_RULES.md` |
 | `names/futurama_robots.txt` | 310 unique Futurama robot names — the hire.sh name pool |
