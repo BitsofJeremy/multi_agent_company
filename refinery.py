@@ -3,8 +3,8 @@
 
 Stolen idea, own hands: fingerprint tool failures across sessions in the
 Hermes state.db, count recurrences, and append anything that crosses the
-bar to a vault log for Lilith to judge. No host patch, no auto-editing,
-no model calls — evidence only, taste stays with the family.
+bar to a vault log for the CEO to judge. No host patch, no auto-editing,
+no model calls — evidence only, taste stays with the operator.
 
 Usage:
   refinery.py            # scan last N days (default 14), append new findings
@@ -16,7 +16,7 @@ import argparse, collections, hashlib, json, os, re, sqlite3, sys, time
 
 HERMES_HOME = os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes"))
 STATE_DB = os.path.join(HERMES_HOME, "state.db")
-VAULT = os.environ.get("LILITH_VAULT", os.path.join(os.path.expanduser("~"), "vault"))
+VAULT = os.environ.get("COMPANY_VAULT", os.path.join(os.path.expanduser("~"), "vault"))
 LOG = os.path.join(VAULT, "System/Assistant/logs/refinery-log.md")
 
 # ── Volatile-part scrubbing: collapse ids, paths, numbers so "again" means again.
